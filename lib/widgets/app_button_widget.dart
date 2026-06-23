@@ -1,4 +1,5 @@
 // lib/widgets/app_button_widget.dart
+
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 
@@ -35,12 +36,16 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = color ?? primaryRed;
-    final child = isLoading
-        ? const SizedBox(
-            width: 20, height: 20,
+
+    final Widget child = isLoading
+        ? SizedBox(
+            width: 20,
+            height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isOutlined ? bg : Colors.white,
+              ),
             ),
           )
         : Row(
@@ -62,31 +67,23 @@ class AppButton extends StatelessWidget {
             ],
           );
 
-    final style = isOutlined
+    final ButtonStyle style = isOutlined
         ? OutlinedButton.styleFrom(
             foregroundColor: bg,
             side: BorderSide(color: bg, width: 1.5),
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           )
         : ElevatedButton.styleFrom(
             backgroundColor: bg,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             elevation: 0,
-          );
-
-    final btn = isOutlined
-        ? OutlinedButton(
-            onPressed: isLoading ? null : onPressed,
-            style: style as OutlinedButtonStyle?,
-            child: child,
-          )
-        : ElevatedButton(
-            onPressed: isLoading ? null : onPressed,
-            style: style as ButtonStyle?,
-            child: child,
           );
 
     return SizedBox(
@@ -94,23 +91,12 @@ class AppButton extends StatelessWidget {
       child: isOutlined
           ? OutlinedButton(
               onPressed: isLoading ? null : onPressed,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: bg,
-                side: BorderSide(color: bg, width: 1.5),
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
+              style: style,
               child: child,
             )
           : ElevatedButton(
               onPressed: isLoading ? null : onPressed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: bg,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
+              style: style,
               child: child,
             ),
     );
