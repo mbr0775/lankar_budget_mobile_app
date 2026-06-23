@@ -1,8 +1,9 @@
-// lib/screens/analytics/analytics_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:math' as math;
+import 'package:fl_chart/fl_chart.dart';
 import '../../providers/books_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -38,6 +39,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
   bool _loading = true;
   late AnimationController _animCtrl;
   late Animation<double> _anim;
+  StreamSubscription? _entriesSub;
 
   @override
   void initState() {
@@ -46,10 +48,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
         vsync: this, duration: const Duration(milliseconds: 800));
     _anim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic);
     _loadAll();
+    _entriesSub = HiveService().entriesBox.watch().listen((_) => _loadAll());
   }
 
   @override
   void dispose() {
+    _entriesSub?.cancel();
     _animCtrl.dispose();
     super.dispose();
   }
@@ -71,17 +75,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
   // ── Filter entries by selected period ────────────────────────────────────
   List<Map<String, dynamic>> get _filtered {
     final now  = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     DateTime cutoff;
     switch (_period) {
-      case _Period.week:    cutoff = now.subtract(const Duration(days: 7));  break;
-      case _Period.month:   cutoff = DateTime(now.year, now.month, 1);        break;
-      case _Period.quarter: cutoff = DateTime(now.year, now.month - 2, 1);    break;
-      case _Period.year:    cutoff = DateTime(now.year, 1, 1);                break;
+      case _Period.week:    cutoff = today.subtract(const Duration(days: 7));  break;
+      case _Period.month:   cutoff = DateTime(now.year, now.month, 1);         break;
+      case _Period.quarter: cutoff = DateTime(now.year, now.month - 2, 1);     break;
+      case _Period.year:    cutoff = DateTime(now.year, 1, 1);                 break;
     }
     return _allEntries.where((e) {
       final ds = e['entry_date'] as String? ?? e['created_at'] as String? ?? '';
       final d  = DateTime.tryParse(ds);
-      return d != null && d.isAfter(cutoff);
+      return d != null && !d.isBefore(cutoff);
     }).toList();
   }
 
@@ -107,6 +112,57 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
     final sorted = Map.fromEntries(
         map.entries.toList()..sort((a, b) => b.value.compareTo(a.value)));
     return sorted;
+  }
+
+  // ── Monthly trends for the last 12 months ────────────────────────────────
+  List<Map<String, double>> get _monthlyTrends {
+    final now = DateTime.now();
+    final trends = <Map<String, double>>[];
+    for (int i = 11; i >= 0; i--) {
+      final monthStart = DateTime(now.year, now.month - i, 1);
+      final monthEnd = DateTime(now.year, now.month - i + 1, 1).subtract(const Duration(days: 1));
+      final monthEntries = _allEntries.where((e) {
+        final ds = e['entry_date'] as String? ?? e['created_at'] as String? ?? '';
+        final d = DateTime.tryParse(ds);
+        return d != null && !d.isBefore(monthStart) && !d.isAfter(monthEnd);
+      }).toList();
+      final income = monthEntries.where((e) => e['is_income'] == true).fold(0.0, (s, e) => s + (e['amount'] as num).toDouble());
+      final expense = monthEntries.where((e) => e['is_income'] == false).fold(0.0, (s, e) => s + (e['amount'] as num).toDouble());
+      trends.add({'income': income, 'expense': expense, 'month': monthStart.month.toDouble(), 'year': monthStart.year.toDouble()});
+    }
+    return trends;
+  }
+
+  // ── Anomaly detection: expenses significantly above average ──────────────
+  List<Map<String, dynamic>> get _anomalies {
+    if (_filtered.isEmpty) return [];
+    final expenses = _filtered.where((e) => e['is_income'] == false).map((e) => (e['amount'] as num).toDouble()).toList();
+    if (expenses.length < 3) return [];
+    final mean = expenses.reduce((a, b) => a + b) / expenses.length;
+    final variance = expenses.map((e) => math.pow(e - mean, 2)).reduce((a, b) => a + b) / expenses.length;
+    final stdDev = math.sqrt(variance);
+    final threshold = mean + 2 * stdDev;
+    return _filtered.where((e) => e['is_income'] == false && (e['amount'] as num).toDouble() > threshold).toList();
+  }
+
+  // ── Predictive savings for the year ───────────────────────────────────────
+  double get _predictedYearlySavings {
+    final trends = _monthlyTrends;
+    if (trends.length < 3) return _savings * 12;
+    // Simple linear regression on savings
+    final savingsData = trends.map((t) => t['income']! - t['expense']!).toList();
+    final n = savingsData.length;
+    final x = List.generate(n, (i) => i.toDouble());
+    final y = savingsData;
+    final sumX = x.reduce((a, b) => a + b);
+    final sumY = y.reduce((a, b) => a + b);
+    final sumXY = List.generate(n, (i) => x[i] * y[i]).reduce((a, b) => a + b);
+    final sumXX = x.map((xi) => xi * xi).reduce((a, b) => a + b);
+    final slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    final intercept = (sumY - slope * sumX) / n;
+    // Predict for the next 12 months from now
+    final futureSavings = List.generate(12, (i) => intercept + slope * (n + i));
+    return futureSavings.reduce((a, b) => a + b);
   }
 
   String _categorise(String desc) {
@@ -138,6 +194,15 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(booksProvider);
+    ref.listen<AsyncValue<List<Map<String, dynamic>>>>(
+      booksProvider,
+      (previous, next) {
+        if (next is AsyncData && previous != next) {
+          _loadAll();
+        }
+      },
+    );
     final isLoggedIn = ref.watch(isLoggedInProvider);
     final settings   = ref.watch(settingsProvider);
     final symbol     = settings.currencySymbol;
@@ -246,6 +311,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
                     _buildCategorySection(symbol, rate),
                     const SizedBox(height: 20),
 
+                    // ── Trends chart ──────────────────────────────────────
+                    _buildTrendsChart(symbol, rate),
+                    const SizedBox(height: 20),
+
                     // ── Smart insights ───────────────────────────────────
                     _buildInsights(symbol, rate),
                     const SizedBox(height: 100),
@@ -271,6 +340,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
               onTap: () {
                 setState(() => _period = p);
                 _animCtrl.forward(from: 0);
+                _loadAll();
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -569,6 +639,143 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
     );
   }
 
+  // ── Trends chart ──────────────────────────────────────────────────────────
+  Widget _buildTrendsChart(String symbol, double rate) {
+    final trends = _monthlyTrends;
+    if (trends.isEmpty) return const SizedBox.shrink();
+
+    final incomeSpots = trends.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value['income']! / rate))
+        .toList();
+    final expenseSpots = trends.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value['expense']! / rate))
+        .toList();
+
+    final maxY = [
+      incomeSpots.map((s) => s.y).fold(0.0, math.max),
+      expenseSpots.map((s) => s.y).fold(0.0, math.max),
+    ].reduce(math.max);
+    final chartMax = math.max(maxY * 1.15, 1.0);
+    final interval = chartMax / 4;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Income vs Expense Trends (Last 12 Months)',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 200,
+            child: LineChart(
+              LineChartData(
+                minY: 0,
+                maxY: chartMax,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: Colors.grey.withOpacity(0.15),
+                    strokeWidth: 1,
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 50,
+                      interval: interval,
+                      getTitlesWidget: (value, meta) {
+                        final text = value == 0
+                            ? '0'
+                            : '$symbol${formatCurrencyCompact(value)}';
+                        return Text(text,
+                            style: const TextStyle(fontSize: 10));
+                      },
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 30,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index < 0 || index >= trends.length) {
+                          return const SizedBox.shrink();
+                        }
+                        if (index % 3 != 0 && index != trends.length - 1) {
+                          return const SizedBox.shrink();
+                        }
+                        final month = trends[index]['month']!.toInt();
+                        final year = trends[index]['year']!.toInt();
+                        return Text('${_monthAbbrev(month)} ${year % 100}',
+                            style: const TextStyle(fontSize: 10));
+                      },
+                    ),
+                  ),
+                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: false),
+                lineTouchData: LineTouchData(enabled: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: incomeSpots,
+                    isCurved: true,
+                    color: incomeGreen,
+                    barWidth: 3,
+                    dotData: FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                  LineChartBarData(
+                    spots: expenseSpots,
+                    isCurved: true,
+                    color: expenseRed,
+                    barWidth: 3,
+                    dotData: FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(children: [
+                Container(width: 12, height: 3, color: incomeGreen),
+                const SizedBox(width: 4),
+                const Text('Income', style: TextStyle(fontSize: 12)),
+              ]),
+              const SizedBox(width: 20),
+              Row(children: [
+                Container(width: 12, height: 3, color: expenseRed),
+                const SizedBox(width: 4),
+                const Text('Expense', style: TextStyle(fontSize: 12)),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _monthAbbrev(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
   // ── Smart insights ────────────────────────────────────────────────────────
   Widget _buildInsights(String symbol, double rate) {
     final insights = <({String text, IconData icon, Color color})>[];
@@ -582,6 +789,42 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
         text:  '${top.key} is your biggest expense (${pct.toStringAsFixed(0)}% of total)',
         icon:  Icons.flag_rounded,
         color: expenseRed,
+      ));
+    }
+
+    // Compare with previous period
+    final prevPeriod = _getPreviousPeriodData();
+    if (prevPeriod['expense']! > 0) {
+      final change = ((_expense - prevPeriod['expense']!) / prevPeriod['expense']! * 100);
+      if (change.abs() > 5) {
+        insights.add((
+          text:  'Expenses ${change > 0 ? 'increased' : 'decreased'} by ${change.abs().toStringAsFixed(1)}% compared to last ${_period.label.toLowerCase()}',
+          icon:  change > 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+          color: change > 0 ? expenseRed : incomeGreen,
+        ));
+      }
+    }
+
+    // Anomalies
+    final anomalies = _anomalies;
+    if (anomalies.isNotEmpty) {
+      for (final anomaly in anomalies.take(2)) { // Show up to 2
+        final amount = (anomaly['amount'] as num?)?.toDouble() ?? 0.0;
+        insights.add((
+          text:  'Unusual expense: ${anomaly['description'] ?? 'Unknown'} - $symbol${formatCurrency(amount / rate)}',
+          icon:  Icons.warning_rounded,
+          color: Colors.orange,
+        ));
+      }
+    }
+
+    // Predictive savings
+    final predicted = _predictedYearlySavings / rate;
+    if (predicted != 0) {
+      insights.add((
+        text:  'Projected yearly savings: $symbol${formatCurrency(predicted)} based on current trends',
+        icon:  Icons.timeline_rounded,
+        color: predicted > 0 ? incomeGreen : expenseRed,
       ));
     }
 
@@ -650,6 +893,35 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
         )),
       ],
     );
+  }
+
+  Map<String, double> _getPreviousPeriodData() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    DateTime prevCutoff;
+    switch (_period) {
+      case _Period.week:    prevCutoff = today.subtract(const Duration(days: 14)); break;
+      case _Period.month:   prevCutoff = DateTime(now.year, now.month - 1, 1);    break;
+      case _Period.quarter: prevCutoff = DateTime(now.year, now.month - 3, 1);    break;
+      case _Period.year:    prevCutoff = DateTime(now.year - 1, 1, 1);            break;
+    }
+    DateTime prevEnd;
+    switch (_period) {
+      case _Period.week:    prevEnd = today.subtract(const Duration(days: 7));     break;
+      case _Period.month:   prevEnd = DateTime(now.year, now.month, 1).subtract(const Duration(days: 1)); break;
+      case _Period.quarter: prevEnd = DateTime(now.year, now.month, 1).subtract(const Duration(days: 1)); break;
+      case _Period.year:    prevEnd = DateTime(now.year, 1, 1).subtract(const Duration(days: 1)); break;
+    }
+    final prevEntries = _allEntries.where((e) {
+      final ds = e['entry_date'] as String? ?? e['created_at'] as String? ?? '';
+      final d = DateTime.tryParse(ds);
+      return d != null && !d.isBefore(prevCutoff) && !d.isAfter(prevEnd);
+    }).toList();
+    final income = prevEntries.where((e) => e['is_income'] == true)
+        .fold(0.0, (s, e) => s + (e['amount'] as num).toDouble());
+    final expense = prevEntries.where((e) => e['is_income'] == false)
+        .fold(0.0, (s, e) => s + (e['amount'] as num).toDouble());
+    return {'income': income, 'expense': expense};
   }
 
   Widget _buildSignInPrompt(BuildContext context) => Center(
