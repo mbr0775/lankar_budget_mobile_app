@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../services/hybrid_storage_service.dart';
+import '../utils/app_errors.dart';
+import 'app_feedback.dart';
 
 class SyncIndicator extends StatefulWidget {
   const SyncIndicator({super.key});
@@ -19,17 +21,17 @@ class _SyncIndicatorState extends State<SyncIndicator> {
     return ValueListenableBuilder<Box<Map>>(
       valueListenable: _storage.syncQueueBox.listenable(),
       builder: (context, box, _) {
-        final count    = box.length;
+        final count = box.length;
         final isOnline = _storage.isOnline;
 
         return GestureDetector(
           onTap: (isOnline && count > 0) ? _manualSync : null,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: (isOnline ? Colors.green : Colors.orange)
-                  .withOpacity(0.15),
+              color: (isOnline ? Colors.green : Colors.orange).withValues(
+                alpha: 0.15,
+              ),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: isOnline ? Colors.green : Colors.orange,
@@ -57,7 +59,9 @@ class _SyncIndicatorState extends State<SyncIndicator> {
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 5, vertical: 1),
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(8),
@@ -65,9 +69,10 @@ class _SyncIndicatorState extends State<SyncIndicator> {
                     child: Text(
                       '$count',
                       style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white),
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ],
@@ -75,13 +80,16 @@ class _SyncIndicatorState extends State<SyncIndicator> {
                   const SizedBox(width: 6),
                   _isSyncing
                       ? const SizedBox(
-                          width: 12, height: 12,
+                          width: 12,
+                          height: 12,
                           child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.blue)))
-                      : const Icon(Icons.sync,
-                          size: 14, color: Colors.blue),
+                            strokeWidth: 1.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.blue,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.sync, size: 14, color: Colors.blue),
                 ],
               ],
             ),
@@ -92,29 +100,55 @@ class _SyncIndicatorState extends State<SyncIndicator> {
   }
 
   Future<void> _manualSync() async {
+    if (_isSyncing) return;
+    if (_storage.isSyncing) {
+      AppFeedback.info(
+        context,
+        'Sync in progress',
+        'Your pending changes are already being synced.',
+      );
+      return;
+    }
     setState(() => _isSyncing = true);
     try {
-      await _storage.syncWithSupabase();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Sync completed!'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
-            duration: const Duration(seconds: 2),
-          ),
+      final complete = await _storage.syncWithSupabase(retryFailed: true);
+      if (!mounted) return;
+      if (complete) {
+        AppFeedback.success(
+          context,
+          'All changes synced',
+          'Your cash books are up to date.',
         );
+      } else {
+        final failure = _storage.lastSyncFailure;
+        if (failure != null && failure.kind != FailureKind.network) {
+          AppFeedback.error(
+            context,
+            AppFailure(
+              failure.title,
+              '${failure.message} Pending changes are still kept on this device.',
+              kind: failure.kind,
+            ),
+          );
+          return;
+        }
+        final pending = await _storage.getUnsyncedCount();
+        if (mounted) {
+          AppFeedback.warning(
+            context,
+            'Some changes still need to sync',
+            '$pending pending changes are kept on this device. Check your connection and tap sync to retry.',
+          );
+        }
       }
-    } catch (e) {
+    } catch (error, stack) {
+      AppErrors.report('Manual sync', error, stack);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sync failed: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppFeedback.error(
+          context,
+          error,
+          fallback:
+              'Could not sync your changes. They are still saved on this device.',
         );
       }
     } finally {

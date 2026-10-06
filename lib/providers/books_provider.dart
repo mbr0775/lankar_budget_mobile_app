@@ -1,6 +1,6 @@
+import '../utils/debug_log.dart';
 // lib/providers/books_provider.dart
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
@@ -137,9 +137,9 @@ class BooksNotifier
         state = AsyncValue.data(updatedBooks);
       }
 
-      debugPrint('✅ Synced ${remoteBooks.length} books + all entries on load');
+      debugLog('✅ Synced ${remoteBooks.length} books + all entries on load');
     } catch (e) {
-      debugPrint('⚠️ _syncAllFromRemote error: $e');
+      debugLog('⚠️ _syncAllFromRemote error: $e');
       // Do not crash. Local data is already shown in Step 1.
     }
   }
@@ -150,13 +150,13 @@ class BooksNotifier
 
     if (userId == null) return null;
 
-    debugPrint(
+    debugLog(
       '📖 createBook: name=$name userId=$userId online=${_storage.isOnline}',
     );
 
     final book = await _storage.createBook(name, userId);
 
-    debugPrint('📖 createBook result: $book');
+    debugLog('📖 createBook result: $book');
 
     if (book != null) {
       // Immediately insert into state so UI shows it right away.

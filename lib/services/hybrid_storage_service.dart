@@ -1,11 +1,12 @@
+import '../utils/debug_log.dart';
 // lib/services/hybrid_storage_service.dart
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive/hive.dart';
 import 'hive_service.dart';
 import 'supabase_service.dart';
 import '../utils/helpers.dart';
+import '../utils/app_errors.dart';
 
 class HybridStorageService {
   static final HybridStorageService _instance =
@@ -13,11 +14,11 @@ class HybridStorageService {
   factory HybridStorageService() => _instance;
   HybridStorageService._internal();
 
-  final HiveService     _hiveService     = HiveService();
+  final HiveService _hiveService = HiveService();
   final SupabaseService _supabaseService = SupabaseService();
 
-  bool _isOnline    = false;
-  bool _isSyncing   = false;
+  bool _isOnline = false;
+  bool _isSyncing = false;
   bool _initialized = false;
 
   StreamSubscription<ConnectivityResult>? _connectivitySub;
@@ -25,7 +26,11 @@ class HybridStorageService {
 
   static const int _maxRetries = 3;
 
-  bool     get isOnline     => _isOnline;
+  bool get isOnline => _isOnline;
+  bool get isSyncing => _isSyncing;
+  AppFailure? lastSyncFailure;
+  bool isEntryPendingSync(String id) =>
+      _hiveService.entriesBox.get(id)?['synced'] != true;
   Box<Map> get syncQueueBox => _hiveService.syncQueueBox;
 
   // ── Init ─────────────────────────────────────────────────────────────────
@@ -41,16 +46,16 @@ class HybridStorageService {
     try {
       final result = await Connectivity().checkConnectivity();
       _isOnline = result != ConnectivityResult.none;
-      debugPrint('🌐 Initial connectivity: $_isOnline ($result)');
+      debugLog('🌐 Initial connectivity: $_isOnline ($result)');
     } catch (e) {
       _isOnline = false;
-      debugPrint('🌐 Connectivity check failed: $e');
+      debugLog('🌐 Connectivity check failed: $e');
     }
 
     // ✅ Listen for connectivity changes (v1.x API)
-    _connectivitySub = Connectivity()
-        .onConnectivityChanged
-        .listen(_handleConnectivityChange);
+    _connectivitySub = Connectivity().onConnectivityChanged.listen(
+      _handleConnectivityChange,
+    );
 
     // ✅ If online at startup, sync immediately
     if (_isOnline) {
@@ -69,7 +74,7 @@ class HybridStorageService {
   void _handleConnectivityChange(ConnectivityResult result) {
     final wasOffline = !_isOnline;
     _isOnline = result != ConnectivityResult.none;
-    debugPrint('🌐 Connectivity changed: $_isOnline ($result)');
+    debugLog('🌐 Connectivity changed: $_isOnline ($result)');
     if (wasOffline && _isOnline) {
       unawaited(_verifyAndSync());
     }
@@ -80,14 +85,14 @@ class HybridStorageService {
     try {
       final user = _supabaseService.client.auth.currentUser;
       if (user == null) {
-        debugPrint('⚠️ Not authenticated, skipping sync');
+        debugLog('⚠️ Not authenticated, skipping sync');
         return;
       }
       _isOnline = true;
-      debugPrint('✅ Authenticated as ${user.email}, starting sync');
+      debugLog('✅ Authenticated as ${user.email}, starting sync');
       await syncWithSupabase();
     } catch (e) {
-      debugPrint('⚠️ _verifyAndSync error: $e');
+      debugLog('⚠️ _verifyAndSync error: $e');
       _isOnline = false;
     }
   }
@@ -98,10 +103,9 @@ class HybridStorageService {
       for (final k in keys) {
         final op = _hiveService.syncQueueBox.get(k);
         if (op != null) {
-          final retries = (op['retries'] as int?) ?? 0;
-          final data    = op['data'] as Map? ?? {};
-          final userId  = data['user_id'] as String? ?? '';
-          if (retries >= _maxRetries || userId == 'demo_user') {
+          final data = op['data'] as Map? ?? {};
+          final userId = data['user_id'] as String? ?? '';
+          if (userId == 'demo_user') {
             await _hiveService.syncQueueBox.delete(k);
           }
         }
@@ -121,27 +125,33 @@ class HybridStorageService {
 
   // ── Books ─────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>?> createBook(String name, String userId) async {
+    Map<String, dynamic>? book;
     if (_isOnline) {
       try {
-        final now  = DateTime.now().toIso8601String();
-        final book = await _supabaseService.createBook(name, userId, 0.0, now);
-        if (book != null) {
-          book['synced'] = true;
-          await _hiveService.booksBox.put(book['id'], book);
-          debugPrint('✅ Book created online: ${book['id']}');
-          return book;
-        }
-      } catch (e) {
-        debugPrint('createBook online error: $e — falling back to offline');
+        book = await _supabaseService.createBook(
+          name,
+          userId,
+          0.0,
+          DateTime.now().toIso8601String(),
+        );
+      } catch (error, stack) {
+        AppErrors.report('Create remote book', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
       }
     }
-    final book = await _hiveService.createBook(name, userId);
-    debugPrint('📦 Book created offline: ${book['id']}');
-    return book;
+    if (book != null) {
+      book['synced'] = true;
+      try {
+        await _hiveService.booksBox.put(book['id'], book);
+      } catch (error, stack) {
+        AppErrors.report('Cache saved book', error, stack);
+      }
+      return book;
+    }
+    return _hiveService.createBook(name, userId);
   }
 
-  Future<List<Map<String, dynamic>>> getBooksWithBalances(
-      String userId) async {
+  Future<List<Map<String, dynamic>>> getBooksWithBalances(String userId) async {
     if (_isOnline) {
       try {
         final remote = await _supabaseService.getBooks(userId);
@@ -149,23 +159,33 @@ class HybridStorageService {
           b['synced'] = true;
           await _hiveService.booksBox.put(b['id'], b);
         }
-        debugPrint('✅ Fetched ${remote.length} books from remote');
+        debugLog('✅ Fetched ${remote.length} books from remote');
       } catch (e) {
-        debugPrint('getBooksWithBalances online error: $e');
+        debugLog('getBooksWithBalances online error: $e');
       }
     }
     final books = await _hiveService.getBooks(userId);
-    await Future.wait(books.map((book) async {
-      try {
-        final income   = await getTotalIncome(book['id'] as String);
-        final expenses = await getTotalExpenses(book['id'] as String);
-        final balance  = income - expenses;
-        unawaited(updateBookBalance(book['id'] as String, balance));
-        book['balance'] = balance;
-      } catch (_) {
-        book['balance'] = 0.0;
-      }
-    }));
+    await Future.wait(
+      books.map((book) async {
+        try {
+          final income = await getTotalIncome(book['id'] as String);
+          final expenses = await getTotalExpenses(book['id'] as String);
+          final balance = income - expenses;
+          unawaited(
+            updateBookBalance(book['id'] as String, balance).catchError((
+              Object error,
+              StackTrace stack,
+            ) {
+              AppErrors.report('Refresh book balance', error, stack);
+              return false;
+            }),
+          );
+          book['balance'] = balance;
+        } catch (_) {
+          book['balance'] = 0.0;
+        }
+      }),
+    );
     return books;
   }
 
@@ -174,12 +194,18 @@ class HybridStorageService {
       try {
         final ok = await _supabaseService.updateBookBalance(bookId, balance);
         if (ok) {
-          await _hiveService.updateBookBalance(bookId, balance,
-              addToQueue: false);
+          await _hiveService.updateBookBalance(
+            bookId,
+            balance,
+            addToQueue: false,
+          );
           await _hiveService.markAsSynced('book', bookId);
           return true;
         }
-      } catch (_) {}
+      } catch (error, stack) {
+        AppErrors.report('updateBookBalance', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
+      }
     }
     return await _hiveService.updateBookBalance(bookId, balance);
   }
@@ -189,12 +215,14 @@ class HybridStorageService {
       try {
         final ok = await _supabaseService.updateBookName(bookId, newName);
         if (ok) {
-          await _hiveService.updateBookName(bookId, newName,
-              addToQueue: false);
+          await _hiveService.updateBookName(bookId, newName, addToQueue: false);
           await _hiveService.markAsSynced('book', bookId);
           return true;
         }
-      } catch (_) {}
+      } catch (error, stack) {
+        AppErrors.report('updateBookName', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
+      }
     }
     return await _hiveService.updateBookName(bookId, newName);
   }
@@ -207,7 +235,10 @@ class HybridStorageService {
           await _hiveService.deleteBook(bookId, addToQueue: false);
           return true;
         }
-      } catch (_) {}
+      } catch (error, stack) {
+        AppErrors.report('deleteBook', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
+      }
     }
     return await _hiveService.deleteBook(bookId);
   }
@@ -220,30 +251,36 @@ class HybridStorageService {
     required bool isIncome,
     DateTime? entryDate,
   }) async {
+    Map<String, dynamic>? entry;
     if (_isOnline && !bookId.startsWith('temp_')) {
       try {
-        final entry = await _supabaseService.createEntry(
-          bookId:      bookId,
-          amount:      amount,
+        entry = await _supabaseService.createEntry(
+          bookId: bookId,
+          amount: amount,
           description: description,
-          isIncome:    isIncome,
-          entryDate:   entryDate,
+          isIncome: isIncome,
+          entryDate: entryDate,
         );
-        if (entry != null) {
-          entry['synced'] = true;
-          await _hiveService.entriesBox.put(entry['id'], entry);
-          return entry;
-        }
-      } catch (e) {
-        debugPrint('createEntry online error: $e');
+      } catch (error, stack) {
+        AppErrors.report('Create remote entry', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
       }
     }
-    return await _hiveService.createEntry(
-      bookId:      bookId,
-      amount:      amount,
+    if (entry != null) {
+      entry['synced'] = true;
+      try {
+        await _hiveService.entriesBox.put(entry['id'], entry);
+      } catch (error, stack) {
+        AppErrors.report('Cache saved entry', error, stack);
+      }
+      return entry;
+    }
+    return _hiveService.createEntry(
+      bookId: bookId,
+      amount: amount,
       description: description,
-      isIncome:    isIncome,
-      entryDate:   entryDate,
+      isIncome: isIncome,
+      entryDate: entryDate,
     );
   }
 
@@ -260,22 +297,38 @@ class HybridStorageService {
     return await _hiveService.getEntries(bookId);
   }
 
-  Future<bool> updateEntry(String entryId,
-      {double? amount, String? description}) async {
+  Future<bool> updateEntry(
+    String entryId, {
+    double? amount,
+    String? description,
+  }) async {
     if (_isOnline && !entryId.startsWith('temp_')) {
       try {
-        final ok = await _supabaseService.updateEntry(entryId,
-            amount: amount, description: description);
+        final ok = await _supabaseService.updateEntry(
+          entryId,
+          amount: amount,
+          description: description,
+        );
         if (ok) {
-          await _hiveService.updateEntry(entryId,
-              amount: amount, description: description, addToQueue: false);
+          await _hiveService.updateEntry(
+            entryId,
+            amount: amount,
+            description: description,
+            addToQueue: false,
+          );
           await _hiveService.markAsSynced('entry', entryId);
           return true;
         }
-      } catch (_) {}
+      } catch (error, stack) {
+        AppErrors.report('updateEntry', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
+      }
     }
-    return await _hiveService.updateEntry(entryId,
-        amount: amount, description: description);
+    return await _hiveService.updateEntry(
+      entryId,
+      amount: amount,
+      description: description,
+    );
   }
 
   Future<bool> deleteEntry(String entryId) async {
@@ -286,7 +339,10 @@ class HybridStorageService {
           await _hiveService.deleteEntry(entryId, addToQueue: false);
           return true;
         }
-      } catch (_) {}
+      } catch (error, stack) {
+        AppErrors.report('deleteEntry', error, stack);
+        if (!AppErrors.canSaveOffline(error)) rethrow;
+      }
     }
     return await _hiveService.deleteEntry(entryId);
   }
@@ -304,48 +360,51 @@ class HybridStorageService {
       getTotalExpenses(bookId),
     ]);
     return {
-      'entries':       results[0] as List<Map<String, dynamic>>,
-      'totalIncome':   results[1] as double,
+      'entries': results[0] as List<Map<String, dynamic>>,
+      'totalIncome': results[1] as double,
       'totalExpenses': results[2] as double,
     };
   }
 
   // ── Sync ──────────────────────────────────────────────────────────────────
-  Future<void> syncWithSupabase() async {
-    if (_isSyncing) return;
+  Future<bool> syncWithSupabase({bool retryFailed = false}) async {
+    if (_isSyncing) return false;
+    lastSyncFailure = null;
     _isSyncing = true;
 
     // ✅ FIX: Check auth instead of querying table (avoids RLS false failures)
     try {
       final user = _supabaseService.client.auth.currentUser;
       if (user == null) {
-        debugPrint('⚠️ syncWithSupabase: not authenticated');
+        lastSyncFailure = AppErrors.session;
+        debugLog('⚠️ syncWithSupabase: not authenticated');
         _isSyncing = false;
-        return;
+        return false;
       }
       _isOnline = true;
     } catch (e) {
-      _isOnline  = false;
+      _isOnline = false;
       _isSyncing = false;
-      return;
+      lastSyncFailure = AppErrors.from(e);
+      return false;
     }
 
-    debugPrint(
-        '🔄 Sync started — queue: ${_hiveService.syncQueueBox.length} ops');
+    debugLog(
+      '🔄 Sync started — queue: ${_hiveService.syncQueueBox.length} ops',
+    );
 
     try {
       final pendingOps = await _hiveService.getPendingSyncOperations();
-      final idMapping  = <String, String>{};
+      final idMapping = <String, String>{};
 
       for (final op in pendingOps) {
         final operation = op['operation'] as String;
-        final data      = Map<String, dynamic>.from(op['data'] as Map);
-        final queueId   = op['id'] as String;
-        final retries   = (op['retries'] as int?) ?? 0;
+        final data = Map<String, dynamic>.from(op['data'] as Map);
+        final queueId = op['id'] as String;
+        final retries = (op['retries'] as int?) ?? 0;
 
-        if (retries >= _maxRetries) {
-          debugPrint('Dropping $operation after $_maxRetries retries');
-          await _hiveService.removeSyncQueueItem(queueId);
+        if (retries >= _maxRetries && !retryFailed) {
+          // Retain failed writes for an explicit manual retry.
           continue;
         }
 
@@ -375,7 +434,7 @@ class HybridStorageService {
         try {
           String? type;
           final originalId = data['id'] as String? ?? '';
-          String itemId    = idMapping[originalId] ?? originalId;
+          String itemId = idMapping[originalId] ?? originalId;
 
           switch (operation) {
             case 'create_book':
@@ -386,16 +445,16 @@ class HybridStorageService {
               }
               final authUid = _supabaseService.currentUserId;
               if (authUid == null) {
-                debugPrint('Skipping create_book: not authenticated');
+                debugLog('Skipping create_book: not authenticated');
                 continue;
               }
-              debugPrint('📤 Syncing book "${dataCopy['name']}"');
+              debugLog('📤 Syncing book "${dataCopy['name']}"');
               final bRes = await _supabaseService.client
                   .from('books')
                   .insert({
-                    'name':       dataCopy['name'],
-                    'user_id':    authUid,
-                    'balance':    dataCopy['balance'] ?? 0.0,
+                    'name': dataCopy['name'],
+                    'user_id': authUid,
+                    'balance': dataCopy['balance'] ?? 0.0,
                     'created_at': dataCopy['created_at'],
                   })
                   .select()
@@ -407,7 +466,7 @@ class HybridStorageService {
               if (bk != null) {
                 bk = Map.from(bk);
                 await _hiveService.booksBox.delete(originalId);
-                bk['id']     = newBId;
+                bk['id'] = newBId;
                 bk['synced'] = true;
                 await _hiveService.booksBox.put(newBId, bk);
               }
@@ -423,7 +482,8 @@ class HybridStorageService {
                 var qOp = _hiveService.syncQueueBox.get(k);
                 if (qOp != null) {
                   final qData = Map<String, dynamic>.from(
-                      qOp['data'] as Map? ?? {});
+                    qOp['data'] as Map? ?? {},
+                  );
                   if (qData['book_id'] == originalId) {
                     qOp = Map.from(qOp);
                     final updatedData = Map<String, dynamic>.from(qData);
@@ -433,7 +493,7 @@ class HybridStorageService {
                   }
                 }
               }
-              debugPrint('✅ Book synced: $originalId → $newBId');
+              debugLog('✅ Book synced: $originalId → $newBId');
               break;
 
             case 'create_entry':
@@ -445,12 +505,12 @@ class HybridStorageService {
               final eRes = await _supabaseService.client
                   .from('entries')
                   .insert({
-                    'book_id':     dataCopy['book_id'],
-                    'amount':      dataCopy['amount'],
+                    'book_id': dataCopy['book_id'],
+                    'amount': dataCopy['amount'],
                     'description': dataCopy['description'],
-                    'is_income':   dataCopy['is_income'],
-                    'entry_date':  dataCopy['entry_date'],
-                    'created_at':  dataCopy['created_at'],
+                    'is_income': dataCopy['is_income'],
+                    'entry_date': dataCopy['entry_date'],
+                    'created_at': dataCopy['created_at'],
                   })
                   .select()
                   .single();
@@ -461,7 +521,7 @@ class HybridStorageService {
               if (en != null) {
                 en = Map.from(en);
                 await _hiveService.entriesBox.delete(originalId);
-                en['id']     = newEId;
+                en['id'] = newEId;
                 en['synced'] = true;
                 await _hiveService.entriesBox.put(newEId, en);
               }
@@ -472,10 +532,12 @@ class HybridStorageService {
               await _supabaseService.client
                   .from('books')
                   .update({
-                    'name':    dataCopy['name'],
+                    'name': dataCopy['name'],
                     'balance': dataCopy['balance'],
                   })
-                  .eq('id', dataCopy['id'] as Object);
+                  .eq('id', dataCopy['id'] as Object)
+                  .select('id')
+                  .single();
               break;
 
             case 'update_entry':
@@ -483,10 +545,12 @@ class HybridStorageService {
               await _supabaseService.client
                   .from('entries')
                   .update({
-                    'amount':      dataCopy['amount'],
+                    'amount': dataCopy['amount'],
                     'description': dataCopy['description'],
                   })
-                  .eq('id', dataCopy['id'] as Object);
+                  .eq('id', dataCopy['id'] as Object)
+                  .select('id')
+                  .single();
               break;
 
             case 'delete_book':
@@ -510,21 +574,23 @@ class HybridStorageService {
             await _hiveService.markAsSynced(type, itemId);
           }
           await _hiveService.removeSyncQueueItem(queueId);
-        } catch (e) {
-          debugPrint('❌ Sync op $operation failed: $e');
+        } catch (error, stack) {
+          lastSyncFailure = AppErrors.from(error);
+          AppErrors.report('Sync $operation', error, stack);
           await _incrementRetry(queueId, op);
         }
       }
-      debugPrint('✅ Sync complete');
-    } catch (e) {
-      debugPrint('❌ syncWithSupabase error: $e');
+      return await getUnsyncedCount() == 0;
+    } catch (error, stack) {
+      lastSyncFailure = AppErrors.from(error);
+      AppErrors.report('Sync pending changes', error, stack);
+      return false;
     } finally {
       _isSyncing = false;
     }
   }
 
-  Future<void> _incrementRetry(
-      String queueId, Map<String, dynamic> op) async {
+  Future<void> _incrementRetry(String queueId, Map<String, dynamic> op) async {
     try {
       final current = _hiveService.syncQueueBox.get(queueId);
       if (current != null) {
@@ -535,8 +601,8 @@ class HybridStorageService {
     } catch (_) {}
   }
 
-  Future<int>  getUnsyncedCount() => _hiveService.getUnsyncedCount();
-  Future<void> clearAllData()     => _hiveService.clearAllData();
+  Future<int> getUnsyncedCount() => _hiveService.getUnsyncedCount();
+  Future<void> clearAllData() => _hiveService.clearAllData();
 
   void dispose() {
     _connectivitySub?.cancel();

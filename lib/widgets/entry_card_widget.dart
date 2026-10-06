@@ -1,15 +1,8 @@
-// lib/widgets/entry_card_widget.dart
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import 'cash_book_design.dart';
 
 class EntryCardWidget extends StatelessWidget {
-  final Map<String, dynamic> entry;
-  final String currencySymbol;
-  final double displayAmount;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
   const EntryCardWidget({
     super.key,
     required this.entry,
@@ -18,122 +11,145 @@ class EntryCardWidget extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
   });
+  final Map<String, dynamic> entry;
+  final String currencySymbol;
+  final double displayAmount;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final isIncome  = entry['is_income'] as bool;
-    final dateField = entry['entry_date'] ?? entry['created_at'];
-    final relative  = getRelativeDate(dateField);
-    final formatted = getFormattedDate(dateField);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+    final scheme = Theme.of(context).colorScheme;
+    final dark = scheme.brightness == Brightness.dark;
+    final income = entry['is_income'] == true;
+    final color = income
+        ? (dark ? const Color(0xFF7DDCB6) : cashIncomeColor)
+        : (dark ? const Color(0xFFFFB4BC) : cashExpenseColor);
+    final raw = (entry['entry_date'] ?? entry['created_at']) as String? ?? '';
+    final date = DateTime.tryParse(raw)?.toLocal();
+    final description = (entry['description'] as String? ?? '').trim();
+    final name = description.isEmpty
+        ? (income ? 'Cash in' : 'Cash out')
+        : description;
+    final pending = entry['synced'] == false;
+    final amount = Semantics(
+      label:
+          '${income ? 'Income' : 'Expense'} $currencySymbol ${formatCurrency(displayAmount)}',
+      excludeSemantics: true,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text(
+          '${income ? '+' : '-'} $currencySymbol ${formatCurrency(displayAmount)}',
+          style: TextStyle(
+            color: color,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -.3,
+          ),
+        ),
+      ),
+    );
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          date == null
+              ? 'Date unavailable'
+              : formatTime(date.toIso8601String()),
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
+        ),
+        if (pending) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Saved on device',
+            style: TextStyle(color: scheme.primary, fontSize: 11),
           ),
         ],
+      ],
+    );
+    final icon = Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            // Type icon
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isIncome
-                      ? [incomeGreen, incomeGreen.withOpacity(0.7)]
-                      : [primaryRed, secondaryRed],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                isIncome ? Icons.arrow_downward : Icons.arrow_upward,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Description + date
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entry['description'] ?? 'No description',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Icon(Icons.calendar_today,
-                          size: 11, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          relative ?? formatted,
-                          style: TextStyle(
-                              color: Colors.grey[500], fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Icon(Icons.access_time,
-                          size: 11, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Text(
-                        formatTime(dateField),
-                        style: TextStyle(
-                            color: Colors.grey[500], fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Amount + actions
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '$currencySymbol ${formatCurrency(displayAmount)}',
-                  style: TextStyle(
-                    color: isIncome ? incomeGreen : expenseRed,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+      child: Icon(
+        income ? Icons.south_west_rounded : Icons.north_east_rounded,
+        color: color,
+        size: 21,
+      ),
+    );
+    final menu = PopupMenuButton<String>(
+      tooltip: 'Manage entry ${entry['id']}',
+      icon: Icon(
+        Icons.more_horiz_rounded,
+        color: scheme.onSurfaceVariant,
+        size: 21,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      onSelected: (value) => value == 'edit' ? onEdit() : onDelete(),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'edit', child: Text('Edit entry')),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text('Delete entry', style: TextStyle(color: scheme.error)),
+        ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: scheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: .35)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onEdit,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 6, 14),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact =
+                    constraints.maxWidth < 320 ||
+                    MediaQuery.textScalerOf(context).scale(12) > 15;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    GestureDetector(
-                      onTap: onEdit,
-                      child: const Icon(Icons.edit_outlined,
-                          color: Colors.blue, size: 19),
+                    Row(
+                      children: [
+                        ExcludeSemantics(child: icon),
+                        const SizedBox(width: 12),
+                        Expanded(child: details),
+                        if (!compact) ...[
+                          const SizedBox(width: 10),
+                          Expanded(child: amount),
+                        ],
+                        menu,
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: onDelete,
-                      child: const Icon(Icons.delete_outline,
-                          color: Colors.red, size: 19),
-                    ),
+                    if (compact)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 54,
+                          top: 12,
+                          right: 10,
+                        ),
+                        child: amount,
+                      ),
                   ],
-                ),
-              ],
+                );
+              },
             ),
-          ],
+          ),
         ),
       ),
     );

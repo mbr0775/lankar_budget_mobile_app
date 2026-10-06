@@ -19,6 +19,7 @@ class EntriesNotifier
   final HybridStorageService _storage;
   final String? _bookId;
 
+  bool lastSaveNeedsSync = false;
   double baseTotalIn = 0;
   double baseTotalOut = 0;
 
@@ -36,9 +37,11 @@ class EntriesNotifier
       baseTotalIn = data['totalIncome'] as double;
       baseTotalOut = data['totalExpenses'] as double;
 
-      state = AsyncValue.data(data['entries'] as List<Map<String, dynamic>>);
+      if (mounted) {
+        state = AsyncValue.data(data['entries'] as List<Map<String, dynamic>>);
+      }
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
     }
   }
 
@@ -61,7 +64,8 @@ class EntriesNotifier
     );
 
     if (entry != null) {
-      await loadEntries();
+      lastSaveNeedsSync = entry['synced'] != true;
+      if (mounted) await loadEntries();
     }
 
     return entry != null;
@@ -79,7 +83,8 @@ class EntriesNotifier
     );
 
     if (ok) {
-      await loadEntries();
+      lastSaveNeedsSync = _storage.isEntryPendingSync(entryId);
+      if (mounted) await loadEntries();
     }
 
     return ok;
@@ -88,7 +93,7 @@ class EntriesNotifier
   Future<bool> deleteEntry(String entryId) async {
     final ok = await _storage.deleteEntry(entryId);
 
-    if (ok) {
+    if (ok && mounted) {
       state = state.whenData(
         (entries) => entries.where((entry) => entry['id'] != entryId).toList(),
       );

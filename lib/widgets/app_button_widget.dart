@@ -35,7 +35,7 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = color ?? primaryRed;
+    final bg = color ?? primaryBlue;
 
     final Widget child = isLoading
         ? SizedBox(

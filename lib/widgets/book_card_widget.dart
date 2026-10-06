@@ -1,17 +1,8 @@
-// lib/widgets/book_card_widget.dart
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import 'home/home_motion.dart';
 
 class BookCardWidget extends StatelessWidget {
-  final Map<String, dynamic> book;
-  final String currencySymbol;
-  final double balance;
-  final VoidCallback onTap;
-  final VoidCallback onRename;
-  final VoidCallback onDelete;
-  final bool isDarkMode;
-
   const BookCardWidget({
     super.key,
     required this.book,
@@ -22,148 +13,187 @@ class BookCardWidget extends StatelessWidget {
     required this.onDelete,
     this.isDarkMode = false,
   });
-
+  final Map<String, dynamic> book;
+  final String currencySymbol;
+  final double balance;
+  final VoidCallback onTap;
+  final VoidCallback onRename;
+  final VoidCallback onDelete;
+  final bool isDarkMode;
   @override
   Widget build(BuildContext context) {
-    final cardColor = isDarkMode ? const Color(0xFF1E1E1E) : Colors.white;
-    final textColor = isDarkMode ? Colors.white : const Color(0xFF212529);
-    final subColor  = isDarkMode ? Colors.grey[400]! : const Color(0xFF6C757D);
-
+    final scheme = Theme.of(context).colorScheme;
+    final name = book['name'] as String? ?? 'Cash book';
+    final date = DateTime.tryParse(book['created_at'] as String? ?? '');
+    final pending = book['synced'] == false;
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .45)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: scheme.primary.withValues(alpha: .05),
+            blurRadius: 20,
+            offset: const Offset(0, 7),
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    // Book icon
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: [primaryRed, secondaryRed]),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(Icons.book,
-                          color: Colors.white, size: 24),
+      child: DepthButton(
+        radius: 26,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: SculptedIcon(
+                      icon: Icons.auto_stories_rounded,
+                      size: 44,
                     ),
-                    const SizedBox(width: 16),
-                    // Book name + date
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            book['name'] ?? '',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -.3,
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.access_time,
-                                  size: 13, color: subColor),
-                              const SizedBox(width: 4),
-                              Text(
-                                formatDate(book['created_at'] ??
-                                    DateTime.now().toIso8601String()),
-                                style: TextStyle(
-                                    color: subColor, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Popup menu
-                    PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, color: subColor),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'rename',
-                          child: Row(children: [
-                            Icon(Icons.edit,
-                                color: primaryRed, size: 18),
-                            SizedBox(width: 10),
-                            Text('Rename'),
-                          ]),
                         ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(children: [
-                            Icon(Icons.delete,
-                                color: Colors.red, size: 18),
-                            SizedBox(width: 10),
-                            Text('Delete'),
-                          ]),
+                        const SizedBox(height: 5),
+                        Text(
+                          date == null
+                              ? 'Cash book'
+                              : 'Created ${formatDate(date.toIso8601String())}',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
-                      onSelected: (val) {
-                        if (val == 'rename') onRename();
-                        if (val == 'delete') onDelete();
-                      },
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Balance row
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: balance >= 0
-                        ? incomeGreen.withOpacity(0.08)
-                        : expenseRed.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Balance',
-                        style: TextStyle(
-                          color: subColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                  PopupMenuButton<String>(
+                    tooltip: 'Manage $name',
+                    padding: EdgeInsets.zero,
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.drive_file_rename_outline_rounded,
+                              size: 18,
+                              color: scheme.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Rename'),
+                          ],
                         ),
                       ),
-                      Text(
-                        '$currencySymbol ${formatCurrency(balance)}',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: balance >= 0 ? incomeGreen : expenseRed,
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                              color: scheme.error,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text('Delete'),
+                          ],
                         ),
                       ),
                     ],
+                    onSelected: (value) {
+                      if (value == 'rename') {
+                        onRename();
+                      } else if (value == 'delete') {
+                        onDelete();
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'BOOK BALANCE',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 9,
+                  letterSpacing: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Semantics(
+                label: 'Balance $currencySymbol ${formatCurrency(balance)}',
+                excludeSemantics: true,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '$currencySymbol ${formatCurrency(balance)}',
+                    style: TextStyle(
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.7,
+                      color: balance < 0 ? scheme.error : scheme.onSurface,
+                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 15),
+              Divider(
+                height: 1,
+                color: scheme.outlineVariant.withValues(alpha: .45),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    pending
+                        ? Icons.cloud_upload_outlined
+                        : Icons.auto_stories_outlined,
+                    size: 14,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      pending ? 'Saved on device' : 'View entries',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    color: scheme.primary,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

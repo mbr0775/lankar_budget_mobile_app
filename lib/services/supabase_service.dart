@@ -1,21 +1,19 @@
-// lib/services/supabase_service.dart
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/app_errors.dart';
 import '../utils/constants.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
   factory SupabaseService() => _instance;
   SupabaseService._internal();
-
   late SupabaseClient client;
 
   Future<void> initialize() async {
     await Supabase.initialize(
-      url:     SupabaseConfig.url,
+      url: SupabaseConfig.url,
       anonKey: SupabaseConfig.anonKey,
     );
-    client = Supabase.instance.client;
+    assignClient();
   }
 
   void assignClient() {
@@ -23,83 +21,67 @@ class SupabaseService {
   }
 
   String? get currentUserId => client.auth.currentUser?.id;
-  bool get isAuthenticated  => client.auth.currentUser != null;
+  bool get isAuthenticated => currentUserId != null;
+  void _requireSession() {
+    if (!isAuthenticated) throw AppErrors.session;
+  }
 
-  // ── Books ─────────────────────────────────────────────────────────────────
+  // Errors propagate so callers can distinguish connection failures from a
+  // rejected write. select().single() also detects missing/forbidden rows.
   Future<Map<String, dynamic>?> createBook(
-      String name, String userId, double balance, String createdAt) async {
-    try {
-      final authUid = currentUserId;
-      if (authUid == null) {
-        debugPrint('❌ createBook: not authenticated');
-        return null;
-      }
-      debugPrint('📤 Supabase createBook: name=$name uid=$authUid');
-      final result = await client.from('books').insert({
-        'name':       name,
-        'user_id':    authUid,   // ✅ always real auth uid
-        'balance':    balance,
-        'created_at': createdAt,
-      }).select().single();
-      debugPrint('✅ createBook OK: ${result['id']}');
-      return Map<String, dynamic>.from(result);
-    } catch (e) {
-      debugPrint('❌ createBook error: $e');
-      return null;
-    }
+    String name,
+    String userId,
+    double balance,
+    String createdAt,
+  ) async {
+    _requireSession();
+    return await client
+        .from('books')
+        .insert({
+          'name': name,
+          'user_id': currentUserId,
+          'balance': balance,
+          'created_at': createdAt,
+        })
+        .select()
+        .single();
   }
 
-  Future<List<Map<String, dynamic>>> getBooks(String userId) async {
-    try {
-      final res = await client
-          .from('books')
-          .select()
-          .order('created_at', ascending: false);
-      debugPrint('✅ getBooks: ${res.length} rows');
-      return List<Map<String, dynamic>>.from(res);
-    } catch (e) {
-      debugPrint('❌ getBooks error: $e');
-      return [];
-    }
-  }
-
-  Future<bool> updateBookBalance(String bookId, double balance) async {
-    try {
+  Future<List<Map<String, dynamic>>> getBooks(String userId) async =>
       await client
           .from('books')
-          .update({'balance': balance})
-          .eq('id', bookId);
-      return true;
-    } catch (e) {
-      debugPrint('❌ updateBookBalance error: $e');
-      return false;
-    }
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+  Future<bool> updateBookBalance(String bookId, double balance) async {
+    _requireSession();
+    await client
+        .from('books')
+        .update({'balance': balance})
+        .eq('id', bookId)
+        .select('id')
+        .single();
+    return true;
   }
 
   Future<bool> updateBookName(String bookId, String newName) async {
-    try {
-      await client
-          .from('books')
-          .update({'name': newName})
-          .eq('id', bookId);
-      return true;
-    } catch (e) {
-      debugPrint('❌ updateBookName error: $e');
-      return false;
-    }
+    _requireSession();
+    await client
+        .from('books')
+        .update({'name': newName})
+        .eq('id', bookId)
+        .select('id')
+        .single();
+    return true;
   }
 
   Future<bool> deleteBook(String bookId) async {
-    try {
-      await client.from('books').delete().eq('id', bookId);
-      return true;
-    } catch (e) {
-      debugPrint('❌ deleteBook error: $e');
-      return false;
-    }
+    _requireSession();
+    await client.from('books').delete().eq('id', bookId).select('id').single();
+    return true;
   }
 
-  // ── Entries ───────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>?> createEntry({
     required String bookId,
     required double amount,
@@ -107,82 +89,65 @@ class SupabaseService {
     required bool isIncome,
     DateTime? entryDate,
   }) async {
-    try {
-      if (!isAuthenticated) {
-        debugPrint('❌ createEntry: not authenticated');
-        return null;
-      }
-      final result = await client.from('entries').insert({
-        'book_id':     bookId,
-        'amount':      amount,
-        'description': description,
-        'is_income':   isIncome,
-        'entry_date':  (entryDate ?? DateTime.now()).toIso8601String(),
-        'created_at':  DateTime.now().toIso8601String(),
-      }).select().single();
-      return Map<String, dynamic>.from(result);
-    } catch (e) {
-      debugPrint('❌ createEntry error: $e');
-      return null;
-    }
+    _requireSession();
+    return await client
+        .from('entries')
+        .insert({
+          'book_id': bookId,
+          'amount': amount,
+          'description': description,
+          'is_income': isIncome,
+          'entry_date': (entryDate ?? DateTime.now()).toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+        })
+        .select()
+        .single();
   }
 
-  Future<List<Map<String, dynamic>>> getEntries(String bookId) async {
-    try {
-      final res = await client
+  Future<List<Map<String, dynamic>>> getEntries(String bookId) async =>
+      await client
           .from('entries')
           .select()
           .eq('book_id', bookId)
           .order('entry_date', ascending: false);
-      return List<Map<String, dynamic>>.from(res);
-    } catch (e) {
-      debugPrint('❌ getEntries error: $e');
-      return [];
-    }
-  }
 
-  Future<bool> updateEntry(String entryId,
-      {double? amount, String? description}) async {
-    try {
-      final updates = <String, dynamic>{};
-      if (amount      != null) updates['amount']      = amount;
-      if (description != null) updates['description'] = description;
-      await client.from('entries').update(updates).eq('id', entryId);
-      return true;
-    } catch (e) {
-      debugPrint('❌ updateEntry error: $e');
-      return false;
-    }
+  Future<bool> updateEntry(
+    String entryId, {
+    double? amount,
+    String? description,
+  }) async {
+    _requireSession();
+    final updates = <String, dynamic>{
+      if (amount != null) 'amount': amount,
+      if (description != null) 'description': description,
+    };
+    if (updates.isEmpty) return true;
+    await client
+        .from('entries')
+        .update(updates)
+        .eq('id', entryId)
+        .select('id')
+        .single();
+    return true;
   }
 
   Future<bool> deleteEntry(String entryId) async {
-    try {
-      await client.from('entries').delete().eq('id', entryId);
-      return true;
-    } catch (e) {
-      debugPrint('❌ deleteEntry error: $e');
-      return false;
-    }
+    _requireSession();
+    await client
+        .from('entries')
+        .delete()
+        .eq('id', entryId)
+        .select('id')
+        .single();
+    return true;
   }
 
-  Future<Map<String, dynamic>?> getProfile(String userId) async {
-    try {
-      return await client
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .single();
-    } catch (e) {
-      return null;
-    }
-  }
+  Future<Map<String, dynamic>?> getProfile(String userId) async =>
+      await client.from('profiles').select().eq('id', userId).maybeSingle();
 
   Future<bool> upsertProfile(Map<String, dynamic> data) async {
-    try {
-      await client.from('profiles').upsert(data);
-      return true;
-    } catch (e) {
-      return false;
-    }
+    _requireSession();
+    await client.from('profiles').upsert(data);
+    return true;
   }
 }

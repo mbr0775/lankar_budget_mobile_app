@@ -1,51 +1,58 @@
-// lib/screens/auth/onboarding_screen.dart
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/constants.dart';
-import 'login_screen.dart';
+import '../../widgets/auth_design.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
-
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final PageController _pageCtrl = PageController();
+  final _pageCtrl = PageController();
   int _currentPage = 0;
-
-  final List<_OnboardingData> _pages = const [
-    _OnboardingData(
-      icon: Icons.book_outlined,
-      title: 'Manage Your Books',
-      subtitle:
-          'Create multiple cash books for different purposes — personal, business, or projects.',
-      color: primaryRed,
+  bool _finishing = false;
+  static const _pages = [
+    (
+      'ONE PLACE. ALL YOUR MONEY.',
+      'Less guesswork.\nMore control.',
+      'Keep personal, business, and project cash books together. Know where your money goes.',
+      Icons.auto_stories_outlined,
+      'A book for every part of life',
     ),
-    _OnboardingData(
-      icon: Icons.sync_alt,
-      title: 'Works Offline',
-      subtitle:
-          'Add entries anytime, even without internet. Your data syncs automatically when you reconnect.',
-      color: Color(0xFF0F6E56),
+    (
+      'LIFE DOESN\'T WAIT FOR WI-FI.',
+      'Offline today.\nIn sync tomorrow.',
+      'Record income and expenses wherever you are. Lankar syncs your entries when you reconnect.',
+      Icons.cloud_done_outlined,
+      'Keep going, even offline',
     ),
-    _OnboardingData(
-      icon: Icons.bar_chart_outlined,
-      title: 'Insightful Reports',
-      subtitle:
-          'View summaries, track income and expenses, and export beautiful PDF reports.',
-      color: Color(0xFF185FA5),
+    (
+      'SEE WHAT\'S POSSIBLE.',
+      'Small insights.\nSmarter decisions.',
+      'Understand your income and spending with clear reports. Export a PDF whenever you need it.',
+      Icons.insights_rounded,
+      'Clarity you can take with you',
     ),
   ];
-
   Future<void> _finish() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(PrefKeys.seenOnboarding, true);
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+    if (_finishing) return;
+    setState(() => _finishing = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.seenOnboarding, true);
+      if (mounted) context.go(AppRoutes.login);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _finishing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save your preference. Please try again.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -55,136 +62,188 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Skip button
-            Align(
-              alignment: Alignment.topRight,
-              child: TextButton(
-                onPressed: _finish,
-                child: Text('Skip',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 15)),
-              ),
-            ),
-            // Page view
-            Expanded(
-              child: PageView.builder(
-                controller: _pageCtrl,
-                itemCount: _pages.length,
-                onPageChanged: (i) => setState(() => _currentPage = i),
-                itemBuilder: (_, i) => _OnboardingPage(data: _pages[i]),
-              ),
-            ),
-            // Dots indicator
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_pages.length, (i) {
-                final isActive = i == _currentPage;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: isActive ? 24 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: isActive ? primaryRed : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 40),
-            // CTA button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (_currentPage < _pages.length - 1) {
-                      _pageCtrl.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    } else {
-                      _finish();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryRed,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    _currentPage < _pages.length - 1 ? 'Next' : 'Get Started',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) => Scaffold(
+    body: AuthBackdrop(
+      child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 14, 14, 0),
+                  child: Row(
+                    children: [
+                      const Expanded(child: BrandLockup()),
+                      TextButton(
+                        onPressed: _finishing ? null : _finish,
+                        child: const Text('Skip'),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageCtrl,
+                    itemCount: _pages.length,
+                    onPageChanged: (page) =>
+                        setState(() => _currentPage = page),
+                    itemBuilder: (context, index) => AnimatedBuilder(
+                      animation: _pageCtrl,
+                      builder: (context, child) {
+                        final page =
+                            _pageCtrl.hasClients &&
+                                _pageCtrl.position.haveDimensions
+                            ? (_pageCtrl.page ?? 0)
+                            : _currentPage.toDouble();
+                        final offset = (page - index).clamp(-1.0, 1.0);
+                        final reduced = MediaQuery.disableAnimationsOf(context);
+                        return Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, .001)
+                            ..rotateY(reduced ? 0 : offset * .16),
+                          child: Opacity(
+                            opacity: reduced ? 1 : (1 - offset.abs() * .4),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final data = _pages[index];
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(28, 12, 28, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                FinanceScene(
+                                  variant: index,
+                                  height: constraints.maxHeight < 510
+                                      ? 220
+                                      : 300,
+                                ),
+                                const SizedBox(height: 20),
+                                Text(
+                                  data.$1,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  data.$2,
+                                  style: const TextStyle(
+                                    fontSize: 36,
+                                    height: 1.13,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  data.$3,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    height: 1.65,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      data.$4,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        data.$5,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 16, 28, 12),
+                  child: Row(
+                    children: [
+                      for (int i = 0; i < _pages.length; i++)
+                        Semantics(
+                          label: 'Page ${i + 1} of ${_pages.length}',
+                          selected: i == _currentPage,
+                          child: AnimatedContainer(
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 250),
+                            margin: const EdgeInsets.only(right: 6),
+                            width: i == _currentPage ? 26 : 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: i == _currentPage
+                                  ? primaryBlue
+                                  : primaryBlue.withValues(alpha: .18),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      const Spacer(),
+                      Text(
+                        '0${_currentPage + 1} / 03',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 22),
+                  child: AuthSubmitButton(
+                    label: _currentPage == 2 ? 'Get started' : 'Continue',
+                    loading: _finishing,
+                    onPressed: () {
+                      if (_currentPage == 2) {
+                        _finish();
+                      } else if (MediaQuery.disableAnimationsOf(context)) {
+                        _pageCtrl.jumpToPage(_currentPage + 1);
+                      } else {
+                        _pageCtrl.nextPage(
+                          duration: const Duration(milliseconds: 450),
+                          curve: Curves.easeInOutCubic,
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
-    );
-  }
-}
-
-class _OnboardingPage extends StatelessWidget {
-  final _OnboardingData data;
-  const _OnboardingPage({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 140, height: 140,
-            decoration: BoxDecoration(
-              color: data.color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(data.icon, size: 70, color: data.color),
-          ),
-          const SizedBox(height: 40),
-          Text(
-            data.title,
-            style: const TextStyle(
-                fontSize: 26, fontWeight: FontWeight.bold,
-                color: Color(0xFF1E293B)),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            data.subtitle,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600], height: 1.6),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OnboardingData {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  const _OnboardingData({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-  });
+    ),
+  );
 }

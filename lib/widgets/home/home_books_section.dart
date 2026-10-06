@@ -1,104 +1,104 @@
-// lib/widgets/home/home_books_section.dart
 import 'package:flutter/material.dart';
-import '../../utils/constants.dart';
 import 'home_book_tile.dart';
+import 'home_motion.dart';
 import '../../screens/books/cash_entry_screen.dart';
 
 class HomeBooksSection extends StatelessWidget {
-  final List<Map<String, dynamic>> books;
-  final String symbol;
-  final double rate;
-  final VoidCallback onBookChanged;
-
   const HomeBooksSection({
     super.key,
     required this.books,
     required this.symbol,
     required this.rate,
     required this.onBookChanged,
+    required this.onSeeAll,
   });
-
+  final List<Map<String, dynamic>> books;
+  final String symbol;
+  final double rate;
+  final VoidCallback onBookChanged;
+  final VoidCallback onSeeAll;
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Your Books',
-              style: TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            if (books.length > 3)
-              TextButton(
-                onPressed: () {},
-                child: const Text(
-                  'See all',
-                  style: TextStyle(
-                      color: primaryRed, fontWeight: FontWeight.w600),
+            Expanded(
+              child: Text(
+                'Your cash books',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 21,
+                  letterSpacing: -.6,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
+            ),
+            TextButton(onPressed: onSeeAll, child: const Text('View all')),
           ],
         ),
-        const SizedBox(height: 12),
-
+        const SizedBox(height: 8),
         if (books.isEmpty)
-          _EmptyBooksCard()
-        else
-          ...books.take(3).map((book) {
-            final bal =
-                (book['balance'] as num?)?.toDouble() ?? 0;
-            return HomeBookTile(
-              book:    book,
-              symbol:  symbol,
-              balance: bal / rate,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CashEntryScreen(
-                    bookId:   book['id'] as String,
-                    bookName: book['name'] as String,
+          DepthButton(
+            onTap: onSeeAll,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  const SculptedIcon(icon: Icons.add_rounded, size: 48),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Start your first cash book',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Give every entry a home.',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  Icon(Icons.chevron_right_rounded, color: scheme.primary),
+                ],
+              ),
+            ),
+          )
+        else
+          ...books
+              .take(3)
+              .map(
+                (book) => HomeBookTile(
+                  book: book,
+                  symbol: symbol,
+                  balance: ((book['balance'] as num?)?.toDouble() ?? 0) / rate,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => CashEntryScreen(
+                          bookId: book['id'] as String,
+                          bookName: book['name'] as String,
+                        ),
+                      ),
+                    );
+                    if (context.mounted) onBookChanged();
+                  },
                 ),
-              ).then((_) => onBookChanged()),
-            );
-          }),
+              ),
       ],
-    );
-  }
-}
-
-class _EmptyBooksCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.book_outlined,
-              size: 48, color: Colors.grey[300]),
-          const SizedBox(height: 12),
-          Text(
-            'No books yet',
-            style: TextStyle(
-                color: Colors.grey[500],
-                fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Go to Books tab and tap + to create one',
-            style: TextStyle(
-                color: Colors.grey[400], fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 }

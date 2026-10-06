@@ -1,88 +1,64 @@
-// lib/widgets/home/premium_banner.dart
 import 'package:flutter/material.dart';
-import '../../utils/constants.dart';
 import '../../screens/profile/subscription_screen.dart';
+import 'home_motion.dart';
 
 class PremiumBanner extends StatelessWidget {
   const PremiumBanner({super.key});
-
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => const SubscriptionScreen()),
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.primary.withValues(alpha: .2)),
       ),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [primaryRed, secondaryRed],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: primaryRed.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+      child: DepthButton(
+        radius: 24,
+        color: scheme.primary.withValues(alpha: .07),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SubscriptionScreen()),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Go Premium!',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Unlock all features and sync across devices',
-                    style: TextStyle(
-                        color: Colors.white70, fontSize: 13),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'Subscribe',
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              const SculptedIcon(
+                icon: Icons.workspace_premium_rounded,
+                size: 42,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Make room for more',
                       style: TextStyle(
-                          color: primaryRed,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 5),
+                    Text(
+                      'Explore Lankar Premium',
+                      style: TextStyle(
+                        color: scheme.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                shape: BoxShape.circle,
+              Icon(
+                Icons.arrow_outward_rounded,
+                color: scheme.primary,
+                size: 21,
               ),
-              child: const Icon(
-                Icons.workspace_premium,
-                color: Colors.white,
-                size: 36,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

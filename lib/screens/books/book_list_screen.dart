@@ -1,611 +1,737 @@
-// lib/screens/books/book_list_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/books_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/constants.dart';
+import '../../utils/app_errors.dart';
+import '../../widgets/app_feedback.dart';
+import '../../widgets/auth_design.dart' show BrandLockup;
 import '../../widgets/book_card_widget.dart';
+import '../../widgets/books_design.dart';
 import '../../widgets/currency_picker_widget.dart';
+import '../../widgets/home/home_motion.dart';
+import '../../widgets/home/premium_banner.dart';
 import '../../widgets/sync_indicator_widget.dart';
 import 'cash_entry_screen.dart';
 
-class BookListScreen extends ConsumerWidget {
+enum _BookSort { newest, name, balance }
+
+extension on _BookSort {
+  String get label => switch (this) {
+    _BookSort.newest => 'Newest first',
+    _BookSort.name => 'Name A-Z',
+    _BookSort.balance => 'Highest balance',
+  };
+}
+
+class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
+  @override
+  ConsumerState<BookListScreen> createState() => _BookListScreenState();
+}
+
+class _BookListScreenState extends ConsumerState<BookListScreen> {
+  final _search = TextEditingController();
+  _BookSort _sort = _BookSort.newest;
+  bool _dialogOpen = false;
+  bool _refreshing = false;
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await ref.read(booksProvider.notifier).loadBooks();
+    } catch (error, stack) {
+      AppErrors.report('Refresh cash books', error, stack);
+      if (mounted) AppFeedback.error(context, error);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  Future<void> _editBook([Map<String, dynamic>? book]) async {
+    if (_dialogOpen) return;
+    setState(() => _dialogOpen = true);
+    final creating = book == null;
+    Map<String, dynamic>? created;
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _BookNameDialog(
+          initialName: book?['name'] as String? ?? '',
+          creating: creating,
+          onSave: (name) async {
+            final notifier = ref.read(booksProvider.notifier);
+            if (creating) {
+              created = await notifier.createBook(name);
+              if (created == null) throw AppErrors.session;
+            } else {
+              if (!await notifier.renameBook(book['id'] as String, name)) {
+                throw const AppFailure(
+                  'Book not renamed',
+                  'Your name is still here. Try again.',
+                );
+              }
+            }
+          },
+        ),
+      );
+      if (saved == true && mounted) {
+        _search.clear();
+        setState(() {});
+        AppFeedback.success(
+          context,
+          creating ? 'Cash book created' : 'Cash book renamed',
+          creating && created?['synced'] != true
+              ? 'Saved on this device. It will sync when a connection is available.'
+              : creating
+              ? 'Your new cash book is ready.'
+              : 'The new name has been saved.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _dialogOpen = false);
+    }
+  }
+
+  Future<void> _deleteBook(Map<String, dynamic> book) async {
+    if (_dialogOpen) return;
+    setState(() => _dialogOpen = true);
+    try {
+      final deleted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _DeleteBookDialog(
+          name: book['name'] as String,
+          onDelete: () async {
+            if (!await ref
+                .read(booksProvider.notifier)
+                .deleteBook(book['id'] as String)) {
+              throw const AppFailure('Book not deleted', 'Please try again.');
+            }
+          },
+        ),
+      );
+      if (deleted == true && mounted) {
+        AppFeedback.success(
+          context,
+          'Cash book deleted',
+          'The book and its entries have been removed.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _dialogOpen = false);
+    }
+  }
+
+  Future<void> _openBook(Map<String, dynamic> book) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => CashEntryScreen(
+          bookId: book['id'] as String,
+          bookName: book['name'] as String,
+        ),
+      ),
+    );
+    if (mounted) await _refresh();
+  }
+
+  List<Map<String, dynamic>> _visibleBooks(List<Map<String, dynamic>> books) {
+    final query = _search.text.trim().toLowerCase();
+    final visible = books
+        .where(
+          (book) =>
+              (book['name'] as String? ?? '').toLowerCase().contains(query),
+        )
+        .toList();
+    DateTime date(Map<String, dynamic> book) =>
+        DateTime.tryParse(book['created_at'] as String? ?? '') ??
+        DateTime(2000);
+    visible.sort((a, b) {
+      final comparison = switch (_sort) {
+        _BookSort.newest => date(b).compareTo(date(a)),
+        _BookSort.name => (a['name'] as String).toLowerCase().compareTo(
+          (b['name'] as String).toLowerCase(),
+        ),
+        _BookSort.balance =>
+          ((b['balance'] as num?)?.toDouble() ?? 0).compareTo(
+            (a['balance'] as num?)?.toDouble() ?? 0,
+          ),
+      };
+      return comparison == 0
+          ? (a['id'] as String).compareTo(b['id'] as String)
+          : comparison;
+    });
+    return visible;
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings   = ref.watch(settingsProvider);
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
     final booksAsync = ref.watch(booksProvider);
-    final isLoggedIn = ref.watch(isLoggedInProvider);
-    final symbol     = settings.currencySymbol;
-    final rate       = settings.exchangeRate;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      body: CustomScrollView(
-        slivers: [
-          // ── App Bar ────────────────────────────────────────────────────
-          SliverAppBar(
-            expandedHeight: 160,
-            floating: false,
-            pinned: true,
-            backgroundColor: primaryRed,
-            elevation: 0,
-            automaticallyImplyLeading: false,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [primaryRed, secondaryRed],
-                  ),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.business,
-                                  color: Colors.white, size: 22),
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Tokilo Technologies',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.bold)),
-                                  Text('Tap to switch business',
-                                      style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+    final signedIn = ref.watch(isLoggedInProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final dark = scheme.brightness == Brightness.dark;
+    final books = booksAsync.asData?.value ?? [];
+    final visible = _visibleBooks(books);
+    final indexById = {
+      for (int i = 0; i < visible.length; i++) visible[i]['id'] as String: i,
+    };
+    final balance = books.fold<double>(
+      0,
+      (sum, book) => sum + ((book['balance'] as num?)?.toDouble() ?? 0),
+    );
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: dark
+                  ? [const Color(0xFF0C1E2C), const Color(0xFF102A3C)]
+                  : [
+                      brandMist,
+                      const Color(0xFFEAF4FB),
+                      const Color(0xFFF7FAFD),
+                    ],
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.attach_money, color: Colors.white),
-                onPressed: () => CurrencyPickerWidget.show(context),
-              ),
-              const SyncIndicator(),
-              const SizedBox(width: 8),
-            ],
           ),
-
-          // ── Header ─────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Premium banner
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [primaryRed, secondaryRed],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(
-                          color: primaryRed.withOpacity(0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10))],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
+          child: SafeArea(
+            bottom: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: CustomScrollView(
+                    key: const PageStorageKey('books-list'),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                        sliver: SliverToBoxAdapter(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Go Premium!',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              const Text(
-                                  'Unlock all features and sync across devices',
-                                  style: TextStyle(
-                                      color: Colors.white70, fontSize: 13)),
-                              const SizedBox(height: 14),
-                              ElevatedButton(
-                                onPressed: () {},
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: primaryRed,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 10),
-                                  elevation: 0,
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
+                              HomeReveal(
+                                child: Row(
                                   children: [
-                                    Text('Subscribe',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.bold)),
-                                    SizedBox(width: 6),
-                                    Icon(Icons.arrow_forward, size: 16),
+                                    const BrandLockup(
+                                      size: 46,
+                                      showName: false,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'YOUR MONEY, ORGANISED',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              letterSpacing: 1.2,
+                                              color: scheme.primary,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          const Text(
+                                            'Cash books',
+                                            style: TextStyle(
+                                              fontSize: 27,
+                                              letterSpacing: -.8,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (signedIn)
+                                      IconButton.filledTonal(
+                                        tooltip: 'Change currency',
+                                        onPressed: () =>
+                                            CurrencyPickerWidget.show(context),
+                                        icon: const Icon(
+                                          Icons.currency_exchange_rounded,
+                                          size: 20,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
+                              const SizedBox(height: 18),
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    'A space for every part of your life.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  if (signedIn) const SyncIndicator(),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              if (signedIn && booksAsync.hasValue) ...[
+                                HomeReveal(
+                                  order: 1,
+                                  child: BooksSummaryCard(
+                                    balance: balance / settings.exchangeRate,
+                                    symbol: settings.currencySymbol,
+                                    count: books.length,
+                                  ),
+                                ),
+                                if (books.isEmpty) const SizedBox(height: 20),
+                                if (books.isNotEmpty) ...[
+                                  const SizedBox(height: 24),
+                                  TextField(
+                                    key: const ValueKey('book-search'),
+                                    controller: _search,
+                                    onChanged: (_) => setState(() {}),
+                                    textInputAction: TextInputAction.search,
+                                    decoration: InputDecoration(
+                                      hintText: 'Search cash books',
+                                      prefixIcon: const Icon(
+                                        Icons.search_rounded,
+                                        size: 22,
+                                      ),
+                                      suffixIcon: _search.text.isEmpty
+                                          ? null
+                                          : IconButton(
+                                              tooltip: 'Clear search',
+                                              onPressed: () =>
+                                                  setState(_search.clear),
+                                              icon: const Icon(
+                                                Icons.close_rounded,
+                                                size: 20,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          _search.text.trim().isEmpty
+                                              ? '${books.length} cash ${books.length == 1 ? 'book' : 'books'}'
+                                              : '${visible.length} of ${books.length} books',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: scheme.onSurfaceVariant,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Refresh cash books',
+                                        onPressed: _refreshing
+                                            ? null
+                                            : _refresh,
+                                        icon: _refreshing
+                                            ? const SizedBox.square(
+                                                dimension: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 20,
+                                              ),
+                                      ),
+                                      PopupMenuButton<_BookSort>(
+                                        tooltip: 'Sort cash books',
+                                        initialValue: _sort,
+                                        onSelected: (value) =>
+                                            setState(() => _sort = value),
+                                        icon: Icon(
+                                          Icons.tune_rounded,
+                                          color: scheme.primary,
+                                          size: 20,
+                                        ),
+                                        itemBuilder: (_) => [
+                                          for (final sort in _BookSort.values)
+                                            PopupMenuItem(
+                                              value: sort,
+                                              child: Text(sort.label),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  Text(
+                                    _sort.label,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                              ],
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.workspace_premium,
-                              color: Colors.white, size: 38),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Your Books',
-                          style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.bold)),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.refresh, color: Colors.grey[600]),
-                            onPressed: () =>
-                                ref.read(booksProvider.notifier).loadBooks(),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.search, color: Colors.grey[600]),
-                            onPressed: () {},
-                          ),
-                        ],
                       ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Book list / empty / logged-out ─────────────────────────────
-          booksAsync.when(
-            loading: () => const SliverFillRemaining(
-              child: Center(
-                  child: CircularProgressIndicator(color: primaryRed)),
-            ),
-            error: (e, _) => SliverFillRemaining(
-              child: Center(child: Text('Error: $e')),
-            ),
-            data: (books) {
-              // Not logged in — show sign-in prompt instead of books
-              if (!isLoggedIn) {
-                return SliverFillRemaining(
-                  child: _SignInPrompt(
-                    onSignIn: () => context.go(AppRoutes.login),
-                  ),
-                );
-              }
-
-              if (books.isEmpty) {
-                return SliverFillRemaining(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.book_outlined,
-                            size: 80, color: Colors.grey[300]),
-                        const SizedBox(height: 16),
-                        Text('No books yet',
-                            style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey[500],
-                                fontWeight: FontWeight.w500)),
-                        const SizedBox(height: 8),
-                        Text('Tap + to create your first book',
-                            style: TextStyle(color: Colors.grey[400])),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final book = books[index];
-                      final bal =
-                          (book['balance'] as num?)?.toDouble() ?? 0;
-                      return BookCardWidget(
-                        book:           book,
-                        currencySymbol: symbol,
-                        balance:        bal / rate,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CashEntryScreen(
-                              bookId:   book['id'],
-                              bookName: book['name'],
+                      if (!signedIn)
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          sliver: SliverToBoxAdapter(
+                            child: BooksEmptyState(
+                              title: 'Your books start here',
+                              message:
+                                  'Sign in to keep your cash books together and track every entry.',
+                              actionLabel: 'Sign in to Lankar',
+                              onAction: () => context.go(AppRoutes.login),
+                              icon: Icons.lock_outline_rounded,
                             ),
                           ),
-                        ).then((_) =>
-                            ref.read(booksProvider.notifier).loadBooks()),
-                        onRename: () => _showRenameDialog(
-                            context, ref, book['id'], book['name']),
-                        onDelete: () =>
-                            _showDeleteDialog(context, ref, book['id']),
-                      );
-                    },
-                    childCount: books.length,
+                        )
+                      else if (booksAsync.isLoading && !booksAsync.hasValue)
+                        const SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: 250,
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                        )
+                      else if (booksAsync.hasError)
+                        SliverToBoxAdapter(
+                          child: AppErrorView(
+                            error: booksAsync.error!,
+                            onRetry: _refresh,
+                          ),
+                        )
+                      else if (books.isEmpty || visible.isEmpty)
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          sliver: SliverToBoxAdapter(
+                            child: HomeReveal(
+                              order: 2,
+                              child: BooksEmptyState(
+                                title: books.isEmpty
+                                    ? 'Give your money a home'
+                                    : 'No matching books',
+                                message: books.isEmpty
+                                    ? 'Create a cash book for everyday spending, savings, or your next big plan.'
+                                    : 'Try another name, or clear your search to see all your cash books.',
+                                actionLabel: books.isEmpty
+                                    ? 'Create your first book'
+                                    : 'Clear search',
+                                icon: books.isEmpty
+                                    ? Icons.auto_stories_rounded
+                                    : Icons.search_rounded,
+                                onAction: books.isEmpty
+                                    ? () => _editBook()
+                                    : () => setState(_search.clear),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final book = visible[index];
+                                return HomeReveal(
+                                  key: ValueKey(book['id']),
+                                  order: 2 + (index < 3 ? index : 2),
+                                  child: BookCardWidget(
+                                    book: book,
+                                    currencySymbol: settings.currencySymbol,
+                                    balance:
+                                        ((book['balance'] as num?)
+                                                ?.toDouble() ??
+                                            0) /
+                                        settings.exchangeRate,
+                                    onTap: () => _openBook(book),
+                                    onRename: () => _editBook(book),
+                                    onDelete: () => _deleteBook(book),
+                                  ),
+                                );
+                              },
+                              childCount: visible.length,
+                              findChildIndexCallback: (key) =>
+                                  indexById[(key as ValueKey).value],
+                            ),
+                          ),
+                        ),
+                      if (signedIn &&
+                          booksAsync.hasValue &&
+                          _search.text.trim().isEmpty)
+                        const SliverPadding(
+                          padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+                          sliver: SliverToBoxAdapter(child: PremiumBanner()),
+                        ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                    ],
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ],
-      ),
-
-      // ── FAB — shows sign-in sheet when logged out ───────────────────────
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          if (!isLoggedIn) {
-            _showSignInRequired(context);
-          } else {
-            _showCreateBookDialog(context, ref);
-          }
-        },
-        backgroundColor: primaryRed,
-        child: const Icon(Icons.add, color: Colors.white),
+        ),
+        floatingActionButton:
+            signedIn && !(booksAsync.hasValue && books.isEmpty)
+            ? FloatingActionButton.extended(
+                onPressed: _dialogOpen ? null : () => _editBook(),
+                tooltip: 'Create cash book',
+                backgroundColor: primaryBlue,
+                foregroundColor: Colors.white,
+                elevation: 3,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text(
+                  'New book',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              )
+            : null,
       ),
     );
   }
+}
 
-  // ── Sign-in required bottom sheet ────────────────────────────────────────
-  void _showSignInRequired(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+class _BookNameDialog extends StatefulWidget {
+  const _BookNameDialog({
+    required this.initialName,
+    required this.creating,
+    required this.onSave,
+  });
+  final String initialName;
+  final bool creating;
+  final Future<void> Function(String name) onSave;
+  @override
+  State<_BookNameDialog> createState() => _BookNameDialogState();
+}
+
+class _BookNameDialogState extends State<_BookNameDialog> {
+  final _form = GlobalKey<FormState>();
+  late final _name = TextEditingController(text: widget.initialName);
+  bool _saving = false;
+  AppFailure? _failure;
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_saving || !_form.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _saving = true;
+      _failure = null;
+    });
+    try {
+      final name = _name.text.trim();
+      if (!widget.creating && name == widget.initialName.trim()) {
+        Navigator.pop(context, false);
+        return;
+      }
+      await widget.onSave(name);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error, stack) {
+      AppErrors.report('Save cash book name', error, stack);
+      if (mounted) {
+        setState(
+          () => _failure = AppErrors.from(
+            error,
+            fallback: 'Your name is still here. Try again.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: AlertDialog(
+      scrollable: true,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SculptedIcon(icon: Icons.auto_stories_rounded, size: 42),
+          const SizedBox(height: 20),
+          Text(
+            widget.creating ? 'Create cash book' : 'Rename cash book',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -.5,
+            ),
+          ),
+        ],
+      ),
+      content: Form(
+        key: _form,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(
-                color: primaryRed.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.lock_outline,
-                  color: primaryRed, size: 32),
-            ),
-            const SizedBox(height: 16),
-            const Text('Sign in Required',
-                style: TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
             Text(
-              'You need to sign in to create and manage your cash books.',
-              textAlign: TextAlign.center,
+              widget.creating
+                  ? 'Choose a name for this part of your money.'
+                  : 'Give your cash book a fresh name.',
               style: TextStyle(
-                  color: Colors.grey[500], fontSize: 14, height: 1.5),
-            ),
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.go(AppRoutes.login);
-                },
-                icon: const Icon(Icons.login, size: 18),
-                label: const Text('Sign In',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryRed,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.5,
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey[600],
-                  side: BorderSide(color: Colors.grey[300]!),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Cancel',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 18),
+            TextFormField(
+              key: const ValueKey('book-name'),
+              controller: _name,
+              enabled: !_saving,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _submit(),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter a book name'
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'Book name',
+                hintText: 'e.g. Everyday spending',
               ),
             ),
+            if (_failure != null) ...[
+              const SizedBox(height: 16),
+              FeedbackCard(
+                title: _failure!.title,
+                message: _failure!.message,
+                tone: FeedbackTone.error,
+                onDismiss: () => setState(() => _failure = null),
+              ),
+            ],
           ],
         ),
       ),
-    );
-  }
-
-  // ── Create / Rename / Delete dialogs ─────────────────────────────────────
-
-  Future<void> _showCreateBookDialog(
-      BuildContext context, WidgetRef ref) async {
-    final ctrl = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (_) => _BookNameDialog(
-          controller: ctrl,
-          title: 'Create New Book',
-          actionLabel: 'Create'),
-    );
-    if (name != null && name.trim().isNotEmpty) {
-      final book =
-          await ref.read(booksProvider.notifier).createBook(name.trim());
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(book != null
-              ? 'Book created successfully!'
-              : 'Failed to create book. Try again.'),
-          backgroundColor: book != null ? primaryRed : Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
-      }
-    }
-  }
-
-  Future<void> _showRenameDialog(BuildContext context, WidgetRef ref,
-      String bookId, String current) async {
-    final ctrl = TextEditingController(text: current);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (_) => _BookNameDialog(
-          controller: ctrl,
-          title: 'Rename Book',
-          actionLabel: 'Save'),
-    );
-    if (name != null &&
-        name.trim().isNotEmpty &&
-        name.trim() != current) {
-      await ref.read(booksProvider.notifier).renameBook(bookId, name.trim());
-    }
-  }
-
-  Future<void> _showDeleteDialog(
-      BuildContext context, WidgetRef ref, String bookId) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
-        title: const Text('Delete Book'),
-        content: const Text('Are you sure? This cannot be undone.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      await ref.read(booksProvider.notifier).deleteBook(bookId);
-    }
-  }
-}
-
-// ── Sign-in prompt widget (shown in book list when logged out) ────────────
-
-class _SignInPrompt extends StatelessWidget {
-  final VoidCallback onSignIn;
-  const _SignInPrompt({required this.onSignIn});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: primaryRed.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.book_outlined,
-                  size: 40, color: primaryRed),
-            ),
-            const SizedBox(height: 20),
-            const Text('Sign in to see your books',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 10),
-            Text(
-              'Create and manage your cash books after signing in.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.grey[500], fontSize: 14, height: 1.5),
-            ),
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: onSignIn,
-                icon: const Icon(Icons.login, size: 18),
-                label: const Text('Sign In',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryRed,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Book name dialog ──────────────────────────────────────────────────────
-
-class _BookNameDialog extends StatelessWidget {
-  final TextEditingController controller;
-  final String title;
-  final String actionLabel;
-
-  const _BookNameDialog({
-    required this.controller,
-    required this.title,
-    required this.actionLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.book_outlined, size: 44, color: primaryRed),
-          const SizedBox(height: 14),
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 19, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 18),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (value) {
-              if (value.trim().isNotEmpty) Navigator.pop(context, value.trim());
-            },
-            decoration: InputDecoration(
-              hintText: 'Book name',
-              filled: true,
-              fillColor: Colors.grey[100],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
-            ),
-          ),
-        ],
-      ),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
       actions: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Cancel'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  final text = controller.text.trim();
-                  if (text.isNotEmpty) Navigator.pop(context, text);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryRed,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                child: Text(actionLabel),
-              ),
-            ),
-          ],
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(widget.creating ? 'Create book' : 'Save name'),
         ),
       ],
+    ),
+  );
+}
+
+class _DeleteBookDialog extends StatefulWidget {
+  const _DeleteBookDialog({required this.name, required this.onDelete});
+  final String name;
+  final Future<void> Function() onDelete;
+  @override
+  State<_DeleteBookDialog> createState() => _DeleteBookDialogState();
+}
+
+class _DeleteBookDialogState extends State<_DeleteBookDialog> {
+  bool _deleting = false;
+  AppFailure? _failure;
+  Future<void> _delete() async {
+    if (_deleting) return;
+    setState(() {
+      _deleting = true;
+      _failure = null;
+    });
+    try {
+      await widget.onDelete();
+      if (mounted) Navigator.pop(context, true);
+    } catch (error, stack) {
+      AppErrors.report('Delete cash book', error, stack);
+      if (mounted) setState(() => _failure = AppErrors.from(error));
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return PopScope(
+      canPop: !_deleting,
+      child: AlertDialog(
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        icon: Icon(Icons.delete_outline_rounded, size: 34, color: scheme.error),
+        title: Text(
+          'Delete "${widget.name}"?',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This removes the cash book and all of its entries. This cannot be undone.',
+            ),
+            if (_failure != null) ...[
+              const SizedBox(height: 16),
+              FeedbackCard(
+                title: _failure!.title,
+                message: _failure!.message,
+                tone: FeedbackTone.error,
+                onDismiss: () => setState(() => _failure = null),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _deleting ? null : () => Navigator.pop(context, false),
+            child: const Text('Keep book'),
+          ),
+          ElevatedButton(
+            onPressed: _deleting ? null : _delete,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+            ),
+            child: _deleting
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Delete book'),
+          ),
+        ],
+      ),
     );
   }
 }

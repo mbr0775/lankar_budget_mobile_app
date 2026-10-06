@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/hybrid_storage_service.dart';
+import '../utils/app_errors.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 
@@ -13,9 +14,9 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
 final currentUserProvider = Provider<User?>((ref) {
   final authAsync = ref.watch(authStateProvider);
   return authAsync.when(
-    data:    (state) => state.session?.user,
-    loading: ()      => AuthService().currentUser,
-    error:   (_, __) => null,
+    data: (state) => state.session?.user,
+    loading: () => AuthService().currentUser,
+    error: (_, __) => null,
   );
 });
 
@@ -76,9 +77,10 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
     try {
       await _authService.signIn(email: email, password: password);
-      state = const AsyncValue.data(null);
+      if (mounted) state = const AsyncValue.data(null);
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
+      Error.throwWithStackTrace(e, s);
     }
   }
 
@@ -86,10 +88,14 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
     try {
       await _authService.signUp(
-          email: email, password: password, fullName: name);
-      state = const AsyncValue.data(null);
+        email: email,
+        password: password,
+        fullName: name,
+      );
+      if (mounted) state = const AsyncValue.data(null);
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
+      Error.throwWithStackTrace(e, s);
     }
   }
 
@@ -97,29 +103,46 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
     try {
       await _authService.signInWithGoogle();
-      state = const AsyncValue.data(null);
+      if (mounted) state = const AsyncValue.data(null);
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
+      Error.throwWithStackTrace(e, s);
     }
   }
 
   Future<void> signOut() async {
+    final storage = HybridStorageService();
+    if (await storage.getUnsyncedCount() > 0) {
+      throw const AppFailure(
+        'Sync before signing out',
+        'You have changes saved only on this device. Connect to the internet and sync them before signing out.',
+      );
+    }
     await _authService.signOut();
-    await HybridStorageService().clearAllData();
+    try {
+      await storage.clearAllData();
+    } catch (error, stack) {
+      AppErrors.report('Clear signed-out cache', error, stack);
+      throw const AppFailure(
+        'Signed out, but cleanup failed',
+        'Local data could not be cleared. Restart Lankar before using another account.',
+      );
+    }
   }
 
   Future<void> resetPassword(String email) async {
     state = const AsyncValue.loading();
     try {
       await _authService.resetPassword(email);
-      state = const AsyncValue.data(null);
+      if (mounted) state = const AsyncValue.data(null);
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
+      Error.throwWithStackTrace(e, s);
     }
   }
 }
 
 final authNotifierProvider =
     StateNotifierProvider<AuthNotifier, AsyncValue<void>>(
-  (ref) => AuthNotifier(ref.watch(authServiceProvider)),
-);
+      (ref) => AuthNotifier(ref.watch(authServiceProvider)),
+    );

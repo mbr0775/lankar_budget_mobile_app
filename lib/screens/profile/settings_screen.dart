@@ -5,23 +5,71 @@ import 'package:go_router/go_router.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/constants.dart';
+import '../../utils/app_errors.dart';
+import '../../widgets/app_feedback.dart';
+import '../../services/hybrid_storage_service.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings   = ref.watch(settingsProvider);
-    final notifier   = ref.read(settingsProvider.notifier);
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  bool _syncing = false;
+
+  Future<void> _syncNow() async {
+    if (_syncing) return;
+    final storage = HybridStorageService();
+    if (storage.isSyncing) {
+      AppFeedback.info(
+        context,
+        'Sync in progress',
+        'Your changes are already being synced.',
+      );
+      return;
+    }
+    setState(() => _syncing = true);
+    try {
+      final complete = await storage.syncWithSupabase(retryFailed: true);
+      if (!mounted) return;
+      if (complete) {
+        AppFeedback.success(
+          context,
+          'All changes synced',
+          'Your cash books are up to date.',
+        );
+      } else {
+        AppFeedback.error(
+          context,
+          storage.lastSyncFailure ??
+              const AppFailure(
+                'Some changes still need to sync',
+                'Your pending changes are kept on this device. Check your connection and retry.',
+              ),
+        );
+      }
+    } catch (error, stack) {
+      AppErrors.report('Settings sync', error, stack);
+      if (mounted) AppFeedback.error(context, error);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
     final isLoggedIn = ref.watch(isLoggedInProvider);
-    final fullName   = ref.watch(userFullNameProvider);
-    final email      = ref.watch(currentUserProvider)?.email ?? '';
+    final fullName = ref.watch(userFullNameProvider);
+    final email = ref.watch(currentUserProvider)?.email ?? '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       body: CustomScrollView(
         slivers: [
-
           // ── Top App Bar (home screen style) ──────────────────────────────
           SliverAppBar(
             pinned: true,
@@ -60,69 +108,71 @@ class SettingsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
                   // ── Account info (only when logged in) ───────────────────
                   if (isLoggedIn) ...[
                     _SectionHeader(title: 'ACCOUNT'),
                     const SizedBox(height: 10),
-                    _SettingsCard(children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            // Avatar circle with first letter
-                            Container(
-                              width: 48, height: 48,
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [primaryRed, secondaryRed],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  fullName.isNotEmpty
-                                      ? fullName[0].toUpperCase()
-                                      : 'U',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
+                    _SettingsCard(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              // Avatar circle with first letter
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [primaryBlue, secondaryBlue],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
+                                  shape: BoxShape.circle,
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    fullName,
+                                child: Center(
+                                  child: Text(
+                                    fullName.isNotEmpty
+                                        ? fullName[0].toUpperCase()
+                                        : 'U',
                                     style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 15,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    email,
-                                    style: TextStyle(
-                                      color: Colors.grey[500],
-                                      fontSize: 12,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      fullName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      email,
+                                      style: TextStyle(
+                                        color: Colors.grey[500],
+                                        fontSize: 12,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ]),
+                      ],
+                    ),
                     const SizedBox(height: 24),
                   ],
 
@@ -173,18 +223,9 @@ class SettingsScreen extends ConsumerWidget {
                       _ActionTile(
                         icon: Icons.sync,
                         iconColor: const Color(0xFF185FA5),
-                        title: 'Sync now',
+                        title: _syncing ? 'Syncing...' : 'Sync now',
                         subtitle: 'Manually push local changes',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Sync started...'),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                          );
-                        },
+                        onTap: !isLoggedIn || _syncing ? null : _syncNow,
                         showArrow: false,
                       ),
                       const Divider(height: 1, indent: 56),
@@ -213,27 +254,29 @@ class SettingsScreen extends ConsumerWidget {
                   // Shows "Sign Out" when logged in, "Login" when logged out
                   _SectionHeader(title: isLoggedIn ? 'SESSION' : 'GET STARTED'),
                   const SizedBox(height: 10),
-                  _SettingsCard(children: [
-                    isLoggedIn
-                        ? _ActionTile(
-                            icon: Icons.logout,
-                            iconColor: Colors.red,
-                            title: 'Sign Out',
-                            subtitle: 'You will be logged out of Lankar',
-                            labelColor: Colors.red,
-                            onTap: () => _confirmSignOut(context, ref),
-                            showArrow: false,
-                          )
-                        : _ActionTile(
-                            icon: Icons.login,
-                            iconColor: primaryRed,
-                            title: 'Login',
-                            subtitle: 'Sign in to sync your data',
-                            labelColor: primaryRed,
-                            onTap: () => context.go(AppRoutes.login),
-                            showArrow: true,
-                          ),
-                  ]),
+                  _SettingsCard(
+                    children: [
+                      isLoggedIn
+                          ? _ActionTile(
+                              icon: Icons.logout,
+                              iconColor: Colors.red,
+                              title: 'Sign Out',
+                              subtitle: 'You will be logged out of Lankar',
+                              labelColor: Colors.red,
+                              onTap: () => _confirmSignOut(context, ref),
+                              showArrow: false,
+                            )
+                          : _ActionTile(
+                              icon: Icons.login,
+                              iconColor: primaryBlue,
+                              title: 'Login',
+                              subtitle: 'Sign in to sync your data',
+                              labelColor: primaryBlue,
+                              onTap: () => context.go(AppRoutes.login),
+                              showArrow: true,
+                            ),
+                    ],
+                  ),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -248,8 +291,7 @@ class SettingsScreen extends ConsumerWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Sign Out'),
         content: const Text('Are you sure you want to sign out?'),
         actions: [
@@ -263,7 +305,8 @@ class SettingsScreen extends ConsumerWidget {
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               elevation: 0,
             ),
             child: const Text('Sign Out'),
@@ -271,9 +314,15 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirm == true) {
+    if (confirm != true || !context.mounted) return;
+    try {
       await ref.read(authNotifierProvider.notifier).signOut();
-      // GoRouter redirect will automatically navigate to login
+    } catch (error, stack) {
+      AppErrors.report('Sign out', error, stack);
+      AppFeedback.globalError(
+        error,
+        fallback: 'Could not sign out. Please try again.',
+      );
     }
   }
 }
@@ -286,14 +335,14 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        title,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF6C757D),
-          letterSpacing: 1.1,
-        ),
-      );
+    title,
+    style: const TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6C757D),
+      letterSpacing: 1.1,
+    ),
+  );
 }
 
 class _SettingsCard extends StatelessWidget {
@@ -302,19 +351,19 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
         ),
-        child: Column(children: children),
-      );
+      ],
+    ),
+    child: Column(children: children),
+  );
 }
 
 class _ToggleTile extends StatelessWidget {
@@ -334,39 +383,44 @@ class _ToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: primaryRed.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: primaryRed, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 15)),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: Colors.grey[500], fontSize: 12)),
-                ],
-              ),
-            ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeColor: primaryRed,
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    child: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: primaryBlue.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: primaryBlue, size: 20),
         ),
-      );
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: TextStyle(color: Colors.grey[500], fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: primaryBlue,
+        ),
+      ],
+    ),
+  );
 }
 
 class _ActionTile extends StatelessWidget {
@@ -390,33 +444,32 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-            color: labelColor ?? const Color(0xFF212529),
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(color: Colors.grey[500], fontSize: 12),
-        ),
-        trailing: showArrow
-            ? Icon(Icons.chevron_right, color: Colors.grey[400])
-            : null,
-        onTap: onTap,
-      );
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    leading: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: iconColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: iconColor, size: 20),
+    ),
+    title: Text(
+      title,
+      style: TextStyle(
+        fontWeight: FontWeight.w600,
+        fontSize: 15,
+        color: labelColor ?? const Color(0xFF212529),
+      ),
+    ),
+    subtitle: Text(
+      subtitle,
+      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+    ),
+    trailing: showArrow
+        ? Icon(Icons.chevron_right, color: Colors.grey[400])
+        : null,
+    onTap: onTap,
+  );
 }
 
 class _CurrencyTile extends StatelessWidget {
@@ -433,7 +486,7 @@ class _CurrencyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final symbol = currencySymbols[currency]!;
-    final name   = currency.toString().split('.').last;
+    final name = currency.toString().split('.').last;
 
     return InkWell(
       onTap: onTap,
@@ -443,9 +496,10 @@ class _CurrencyTile extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 44, height: 44,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: isSelected ? primaryRed : Colors.grey[100],
+                color: isSelected ? primaryBlue : Colors.grey[100],
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
@@ -464,14 +518,13 @@ class _CurrencyTile extends StatelessWidget {
               child: Text(
                 name,
                 style: TextStyle(
-                  fontWeight:
-                      isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                   fontSize: 15,
                 ),
               ),
             ),
             if (isSelected)
-              const Icon(Icons.check_circle, color: primaryRed, size: 22),
+              const Icon(Icons.check_circle, color: primaryBlue, size: 22),
           ],
         ),
       ),

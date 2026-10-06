@@ -14,7 +14,7 @@ class SubscriptionScreen extends StatelessWidget {
           SliverAppBar(
             expandedHeight: 200,
             pinned: true,
-            backgroundColor: primaryRed,
+            backgroundColor: primaryBlue,
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -26,7 +26,7 @@ class SubscriptionScreen extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [primaryRed, secondaryRed],
+                    colors: [primaryBlue, secondaryBlue],
                   ),
                 ),
                 child: SafeArea(
@@ -39,11 +39,14 @@ class SubscriptionScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.workspace_premium,
-                              color: Colors.white, size: 32),
+                          child: const Icon(
+                            Icons.workspace_premium,
+                            color: Colors.white,
+                            size: 32,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         const Text(
@@ -72,25 +75,30 @@ class SubscriptionScreen extends StatelessWidget {
                 children: [
                   // ── Feature list ─────────────────────────────────
                   _FeatureItem(
-                      icon: Icons.sync,
-                      title: 'Cloud sync',
-                      subtitle: 'Sync across all your devices'),
+                    icon: Icons.sync,
+                    title: 'Cloud sync',
+                    subtitle: 'Sync across all your devices',
+                  ),
                   _FeatureItem(
-                      icon: Icons.book,
-                      title: 'Unlimited books',
-                      subtitle: 'Create as many books as you need'),
+                    icon: Icons.book,
+                    title: 'Unlimited books',
+                    subtitle: 'Create as many books as you need',
+                  ),
                   _FeatureItem(
-                      icon: Icons.picture_as_pdf,
-                      title: 'PDF export',
-                      subtitle: 'Export and share reports as PDF'),
+                    icon: Icons.picture_as_pdf,
+                    title: 'PDF export',
+                    subtitle: 'Export and share reports as PDF',
+                  ),
                   _FeatureItem(
-                      icon: Icons.bar_chart,
-                      title: 'Advanced analytics',
-                      subtitle: 'Charts, trends, and insights'),
+                    icon: Icons.bar_chart,
+                    title: 'Advanced analytics',
+                    subtitle: 'Charts, trends, and insights',
+                  ),
                   _FeatureItem(
-                      icon: Icons.people,
-                      title: 'Multi-user access',
-                      subtitle: 'Share books with your team'),
+                    icon: Icons.people,
+                    title: 'Multi-user access',
+                    subtitle: 'Share books with your team',
+                  ),
                   const SizedBox(height: 32),
 
                   // ── Plan card ─────────────────────────────────────
@@ -99,14 +107,14 @@ class SubscriptionScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [primaryRed, secondaryRed],
+                        colors: [primaryBlue, secondaryBlue],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: primaryRed.withOpacity(0.3),
+                          color: primaryBlue.withValues(alpha: 0.3),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -129,22 +137,32 @@ class SubscriptionScreen extends StatelessWidget {
                           children: [
                             Padding(
                               padding: EdgeInsets.only(top: 8),
-                              child: Text('QR',
-                                  style: TextStyle(
-                                      color: Colors.white70, fontSize: 16)),
+                              child: Text(
+                                'QR',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                ),
+                              ),
                             ),
                             SizedBox(width: 4),
-                            Text('9.99',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 48,
-                                  fontWeight: FontWeight.bold,
-                                )),
+                            Text(
+                              '9.99',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 48,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             Padding(
                               padding: EdgeInsets.only(top: 28),
-                              child: Text('/mo',
-                                  style: TextStyle(
-                                      color: Colors.white70, fontSize: 14)),
+                              child: Text(
+                                '/mo',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -156,20 +174,20 @@ class SubscriptionScreen extends StatelessWidget {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: const Text(
-                                      'In-app purchase coming soon!'),
+                                    'In-app purchase coming soon!',
+                                  ),
                                   backgroundColor: Colors.green,
                                   behavior: SnackBarBehavior.floating,
                                   shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(10)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
                                 ),
                               );
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
-                              foregroundColor: primaryRed,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
+                              foregroundColor: primaryBlue,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -187,8 +205,7 @@ class SubscriptionScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         const Text(
                           'Cancel anytime. No hidden fees.',
-                          style: TextStyle(
-                              color: Colors.white70, fontSize: 12),
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],
                     ),
@@ -232,22 +249,27 @@ class _FeatureItem extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: primaryRed.withOpacity(0.1),
+              color: primaryBlue.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: primaryRed, size: 22),
+            child: Icon(icon, color: primaryBlue, size: 22),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 15)),
-                Text(subtitle,
-                    style:
-                        TextStyle(color: Colors.grey[500], fontSize: 12)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                ),
               ],
             ),
           ),

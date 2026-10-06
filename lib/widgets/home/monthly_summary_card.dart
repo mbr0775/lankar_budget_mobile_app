@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
-// â”€â”€ View mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 enum _ViewMode { day, week, month }
 
 extension _ViewModeLabel on _ViewMode {
@@ -52,11 +51,10 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
   late AnimationController _ctrl;
   late Animation<double> _anim;
 
-  _ViewMode _viewMode = _ViewMode.day;
+  _ViewMode _viewMode = _ViewMode.week;
   int _monthOffset = 0; // 0 = current, 1 = last, 2 = two months ago
   int? _selectedBar;
 
-  // â”€â”€ Smooth pan/zoom via TransformationController â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // We track a logical offsetX (in bar units) and scaleX independently
   // so we can clamp properly.
   double _scaleX = 1.0;
@@ -101,8 +99,6 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
     super.dispose();
   }
 
-  // â”€â”€ Time helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   DateTime get _targetMonth {
     final now = DateTime.now();
     return DateTime(now.year, now.month - _monthOffset, 1);
@@ -115,8 +111,6 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
     final t = _targetMonth;
     return DateTime(t.year, t.month + 1, 0).day;
   }
-
-  // â”€â”€ Aggregate data into bars depending on view mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Returns list of (label, income, expense) per bar.
   List<({String label, double income, double expense})> _buildBars() {
@@ -133,16 +127,16 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
       final d = DateTime.tryParse(ds);
       if (d == null || d.year != month.year || d.month != month.month) continue;
       final amount = (e['amount'] as num).toDouble() / widget.exchangeRate;
-      if (e['is_income'] == true)
+      if (e['is_income'] == true) {
         inc[d.day - 1] += amount;
-      else
+      } else {
         exp[d.day - 1] += amount;
+      }
     }
 
     final mAbbr = _monthNames[month.month - 1]; // e.g. "Jan"
 
     switch (_viewMode) {
-      // â”€â”€ Daily: "Jan 1" â€¦ "Jan 31" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case _ViewMode.day:
         return List.generate(
           days,
@@ -153,7 +147,6 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
           ),
         );
 
-      // â”€â”€ Weekly: "W1\nJan 1-7", "W2\nJan 8-14" â€¦ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case _ViewMode.week:
         final weeks = <({String label, double income, double expense})>[];
         for (int w = 0; w < days; w += 7) {
@@ -172,7 +165,6 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
         }
         return weeks;
 
-      // â”€â”€ Monthly: "Jan\n2025", "Feb\n2025" â€¦ last 6 months â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case _ViewMode.month:
         final result = <({String label, double income, double expense})>[];
         for (int m = 5; m >= 0; m--) {
@@ -186,10 +178,11 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
             if (d == null || d.year != mm.year || d.month != mm.month) continue;
             final amount =
                 (e['amount'] as num).toDouble() / widget.exchangeRate;
-            if (e['is_income'] == true)
+            if (e['is_income'] == true) {
               mInc += amount;
-            else
+            } else {
               mExp += amount;
+            }
           }
           // Label: "Jan\n2025"
           result.add((
@@ -202,34 +195,34 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
     }
   }
 
-  // â”€â”€ Smart insight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  String _buildInsight(double cI, double cE, double pI, double pE) {
-    if (cI == 0 && cE == 0) return 'No transactions recorded yet.';
-    final savings = cI > 0 ? ((cI - cE) / cI * 100) : 0.0;
-    if (pE == 0 && pI == 0) {
-      return savings >= 0
-          ? 'Savings rate: ${savings.toStringAsFixed(0)}% this period ðŸŽ‰'
-          : 'Overspent by ${widget.currencySymbol} ${formatCurrency(cE - cI)} ðŸ“‰';
+  String _buildInsight(
+    double income,
+    double expense,
+    double previousIncome,
+    double previousExpense,
+  ) {
+    if (income == 0 && expense == 0) {
+      return 'Your next entry will bring this chart to life.';
     }
-    final expDiff = pE > 0 ? ((cE - pE) / pE * 100) : 0.0;
-    final incDiff = pI > 0 ? ((cI - pI) / pI * 100) : 0.0;
-    if (expDiff >= 10)
-      return 'Expenses up ${expDiff.toStringAsFixed(0)}% vs last period ðŸ“ˆ';
-    if (expDiff <= -10)
-      return 'Expenses down ${expDiff.abs().toStringAsFixed(0)}% vs last period ðŸ’š';
-    if (incDiff >= 10)
-      return 'Income up ${incDiff.toStringAsFixed(0)}% vs last period ðŸš€';
-    if (savings >= 40)
-      return 'Outstanding! ${savings.toStringAsFixed(0)}% savings rate ðŸ†';
-    if (savings >= 20)
-      return 'Good job! Saving ${savings.toStringAsFixed(0)}% of income âœ…';
-    if (savings > 0)
-      return 'Savings rate: ${savings.toStringAsFixed(0)}% â€” keep going!';
-    if (cE > cI) return 'Spent more than earned. Review your expenses âš ï¸';
-    return 'Income and expenses are balanced this period.';
+    if (expense > income) {
+      return 'Expenses are above income. Take a closer look at your spending.';
+    }
+    if (previousExpense > 0) {
+      final decrease = (previousExpense - expense) / previousExpense * 100;
+      if (decrease >= 10) {
+        return 'Expenses are down ${decrease.toStringAsFixed(0)}% compared with last period.';
+      }
+    }
+    if (previousIncome > 0) {
+      final increase = (income - previousIncome) / previousIncome * 100;
+      if (increase >= 10) {
+        return 'Income is up ${increase.toStringAsFixed(0)}% compared with last period.';
+      }
+    }
+    final saved = income > 0 ? (income - expense) / income * 100 : 0.0;
+    return 'You kept ${saved.toStringAsFixed(0)}% of your income this period.';
   }
 
-  // â”€â”€ Previous-period totals for insight comparison â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ({double income, double expense}) _prevTotals() {
     if (_viewMode == _ViewMode.month) {
       // Compare last 6 months vs prior 6 months
@@ -244,10 +237,11 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
         final monthsAgo = (now.year - d.year) * 12 + (now.month - d.month);
         if (monthsAgo >= 6 && monthsAgo < 12) {
           final amount = (e['amount'] as num).toDouble() / widget.exchangeRate;
-          if (e['is_income'] == true)
+          if (e['is_income'] == true) {
             pI += amount;
-          else
+          } else {
             pE += amount;
+          }
         }
       }
       return (income: pI, expense: pE);
@@ -261,15 +255,15 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
       final d = DateTime.tryParse(ds);
       if (d == null || d.year != prev.year || d.month != prev.month) continue;
       final amount = (e['amount'] as num).toDouble() / widget.exchangeRate;
-      if (e['is_income'] == true)
+      if (e['is_income'] == true) {
         pI += amount;
-      else
+      } else {
         pE += amount;
+      }
     }
     return (income: pI, expense: pE);
   }
 
-  // â”€â”€ View switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _switchView(_ViewMode mode) {
     setState(() {
       _viewMode = mode;
@@ -290,204 +284,129 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
     _ctrl.forward(from: 0);
   }
 
-  // â”€â”€ Clamp zoom/pan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _clamp(int n) {
     _scaleX = _scaleX.clamp(1.0, _maxScale);
     final visible = n / _scaleX;
     _offsetX = _offsetX.clamp(0.0, (n - visible).clamp(0.0, double.infinity));
   }
 
-  // â”€â”€ Build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   @override
   Widget build(BuildContext context) {
     final bars = _buildBars();
     final n = bars.length;
-    final totInc = bars.fold(0.0, (s, b) => s + b.income);
-    final totExp = bars.fold(0.0, (s, b) => s + b.expense);
-    final prev = _prevTotals();
-    final insight = _buildInsight(totInc, totExp, prev.income, prev.expense);
-
-    // peak bar index
+    final income = bars.fold(0.0, (sum, bar) => sum + bar.income);
+    final expense = bars.fold(0.0, (sum, bar) => sum + bar.expense);
+    final previous = _prevTotals();
+    final insight = _buildInsight(
+      income,
+      expense,
+      previous.income,
+      previous.expense,
+    );
+    final scheme = Theme.of(context).colorScheme;
     int peakBar = -1;
-    double peakVal = 0;
+    double peak = 0;
     for (int i = 0; i < n; i++) {
-      if (bars[i].expense > peakVal) {
-        peakVal = bars[i].expense;
+      if (bars[i].expense > peak) {
+        peak = bars[i].expense;
         peakBar = i;
       }
     }
-
     final monthLabel = _viewMode == _ViewMode.month
         ? 'Last 6 months'
         : '${_monthNames[_targetMonth.month - 1]} ${_targetMonth.year}';
-
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .45)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: scheme.primary.withValues(alpha: .04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // â”€â”€ Row 1: title + view dropdown + month nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: primaryRed.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.bar_chart_rounded,
-                    color: primaryRed,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Flexible(
-                  child: Text(
-                    'Summary',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                // â”€â”€ View mode dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                _ViewDropdown(current: _viewMode, onChanged: _switchView),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // â”€â”€ Row 2: month navigator (hidden in monthly mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            if (_viewMode != _ViewMode.month)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    monthLabel,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _NavBtn(
-                        icon: Icons.chevron_left,
-                        enabled: _monthOffset < 2,
-                        onTap: () => _switchMonth(_monthOffset + 1),
-                      ),
-                      const SizedBox(width: 4),
-                      _NavBtn(
-                        icon: Icons.chevron_right,
-                        enabled: _monthOffset > 0,
-                        onTap: () => _switchMonth(_monthOffset - 1),
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            else
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 10,
+            children: [
               Text(
-                monthLabel,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
+                'Cash flow',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 21,
+                  letterSpacing: -.6,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-
-            const SizedBox(height: 12),
-
-            // â”€â”€ Totals chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(
-              children: [
-                _TotalChip(
-                  label: 'Income',
-                  amount: totInc,
-                  symbol: widget.currencySymbol,
-                  color: incomeGreen,
-                  icon: Icons.arrow_downward_rounded,
-                ),
-                const SizedBox(width: 10),
-                _TotalChip(
-                  label: 'Expense',
-                  amount: totExp,
-                  symbol: widget.currencySymbol,
-                  color: expenseRed,
-                  icon: Icons.arrow_upward_rounded,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // â”€â”€ Zoom hint + reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Icon(
-                  Icons.pinch_rounded,
-                  size: 12,
-                  color: Colors.grey.shade400,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Pinch Â· drag to explore',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
-                ),
-                if (_scaleX > 1.05) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _scaleX = 1.0;
-                      _offsetX = 0.0;
-                      _selectedBar = null;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: primaryRed.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Reset',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: primaryRed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+              _ViewDropdown(current: _viewMode, onChanged: _switchView),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  monthLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
                   ),
-                ],
+                ),
+              ),
+              if (_viewMode != _ViewMode.month) ...[
+                _NavBtn(
+                  icon: Icons.chevron_left_rounded,
+                  enabled: _monthOffset < 2,
+                  onTap: () => _switchMonth(_monthOffset + 1),
+                ),
+                _NavBtn(
+                  icon: Icons.chevron_right_rounded,
+                  enabled: _monthOffset > 0,
+                  onTap: () => _switchMonth(_monthOffset - 1),
+                ),
               ],
-            ),
-            const SizedBox(height: 6),
-
-            // â”€â”€ Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            SizedBox(
-              height: 196,
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _TotalChip(
+                label: 'Income',
+                amount: income,
+                symbol: widget.currencySymbol,
+                color: incomeGreen,
+                icon: Icons.south_west_rounded,
+              ),
+              const SizedBox(width: 10),
+              _TotalChip(
+                label: 'Expense',
+                amount: expense,
+                symbol: widget.currencySymbol,
+                color: expenseRed,
+                icon: Icons.north_east_rounded,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 185,
+            child: RepaintBoundary(
               child: AnimatedBuilder(
                 animation: _anim,
-                builder: (ctx, __) => _BarChart(
+                builder: (ctx, _) => _BarChart(
                   bars: bars,
-                  progress: _anim.value,
+                  progress: MediaQuery.disableAnimationsOf(context)
+                      ? 1
+                      : _anim.value,
                   peakBar: peakBar,
                   selectedBar: _selectedBar,
                   currencySymbol: widget.currencySymbol,
@@ -495,86 +414,100 @@ class _MonthlySummaryCardState extends State<MonthlySummaryCard>
                   offsetX: _offsetX,
                   yAxisWidth: _yAxisW,
                   barSpace: _barSpace,
-                  onBarTap: (idx) => setState(
-                    () => _selectedBar = _selectedBar == idx ? null : idx,
+                  onBarTap: (index) => setState(
+                    () => _selectedBar = _selectedBar == index ? null : index,
                   ),
-                  onScaleStart: (focalDx) {
+                  onScaleStart: (dx) {
                     _baseScaleX = _scaleX;
                     _baseOffsetX = _offsetX;
-                    _lastFocalDx = focalDx;
+                    _lastFocalDx = dx;
                   },
-                  onScaleUpdate: (scale, focalDx) {
-                    final chartW = (ctx.size?.width ?? 300) - _yAxisW;
-                    final barW = (chartW / (n / _baseScaleX)).clamp(
+                  onScaleUpdate: (scale, dx) {
+                    final chartWidth = (ctx.size?.width ?? 300) - _yAxisW;
+                    final barWidth = (chartWidth / (n / _baseScaleX)).clamp(
                       1.0,
                       double.infinity,
                     );
-
                     setState(() {
-                      // 1. Apply new scale centred on focal point
                       _scaleX = _baseScaleX * scale;
                       _clamp(n);
-
-                      // 2. Pan by focal point delta (1 px = barW pixels)
-                      final panDelta = (_lastFocalDx - focalDx) / barW;
-                      _offsetX = _baseOffsetX + panDelta;
+                      _offsetX = _baseOffsetX + (_lastFocalDx - dx) / barWidth;
                       _clamp(n);
                     });
                   },
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-
-            // â”€â”€ Legend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _LegendItem(color: incomeGreen, label: 'Income'),
-                const SizedBox(width: 16),
-                _LegendItem(color: expenseRed, label: 'Expense'),
-                if (peakBar >= 0) ...[
-                  const SizedBox(width: 16),
-                  _LegendItem(color: Colors.orange, label: 'Peak', isDot: true),
-                ],
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // â”€â”€ Smart insight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              const _LegendItem(color: incomeGreen, label: 'Income'),
+              const _LegendItem(color: expenseRed, label: 'Expense'),
+              if (peakBar >= 0)
+                const _LegendItem(
+                  color: Colors.orange,
+                  label: 'Peak',
+                  isDot: true,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              Text(
+                'Tap a bar for details. Pinch to zoom.',
+                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.auto_awesome, color: primaryRed, size: 15),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      insight,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87,
-                      ),
+              if (_scaleX > 1.05)
+                TextButton(
+                  onPressed: () => setState(() {
+                    _scaleX = 1;
+                    _offsetX = 0;
+                    _selectedBar = null;
+                  }),
+                  child: const Text('Reset zoom'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: .06),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  color: scheme.primary,
+                  size: 17,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    insight,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
-
-// â”€â”€ Bar chart widget (handles gestures) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _BarChart extends StatelessWidget {
   final List<({String label, double income, double expense})> bars;
@@ -608,10 +541,8 @@ class _BarChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // â”€â”€ Pinch-to-zoom + drag-to-pan via ScaleGesture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       onScaleStart: (d) => onScaleStart(d.localFocalPoint.dx),
       onScaleUpdate: (d) => onScaleUpdate(d.scale, d.localFocalPoint.dx),
-      // â”€â”€ Tap to select bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       onTapDown: (d) {
         final box = context.findRenderObject() as RenderBox;
         final loc = box.globalToLocal(d.globalPosition);
@@ -627,6 +558,8 @@ class _BarChart extends StatelessWidget {
       },
       child: CustomPaint(
         painter: _BarChartPainter(
+          scheme: Theme.of(context).colorScheme,
+          fontFamily: Theme.of(context).textTheme.bodySmall?.fontFamily,
           bars: bars,
           progress: progress,
           peakBar: peakBar,
@@ -643,10 +576,10 @@ class _BarChart extends StatelessWidget {
   }
 }
 
-// â”€â”€ Bar chart painter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 class _BarChartPainter extends CustomPainter {
   final List<({String label, double income, double expense})> bars;
+  final ColorScheme scheme;
+  final String? fontFamily;
   final double progress;
   final int peakBar;
   final int? selectedBar;
@@ -660,6 +593,8 @@ class _BarChartPainter extends CustomPainter {
   static const double _padBottom = 34.0; // extra room for two-line labels
 
   const _BarChartPainter({
+    required this.scheme,
+    required this.fontFamily,
     required this.bars,
     required this.progress,
     required this.peakBar,
@@ -679,14 +614,12 @@ class _BarChartPainter extends CustomPainter {
     final chartH = size.height - _padTop - _padBottom;
     final chartW = size.width - yAxisWidth;
 
-    // â”€â”€ Max value â†’ nice round ceiling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final rawMax = bars.fold(
       0.0,
       (m, b) => math.max(m, math.max(b.income, b.expense)),
     );
     final maxVal = rawMax == 0 ? 1.0 : _niceMax(rawMax);
 
-    // â”€â”€ Visible range â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final visible = n / scaleX;
     final startIdx = offsetX;
     final endIdx = math.min(offsetX + visible, n.toDouble());
@@ -697,20 +630,19 @@ class _BarChartPainter extends CustomPainter {
 
     double barX(int i) => yAxisWidth + (i - startIdx) * slotW + barSpace;
 
-    // â”€â”€ Y-axis white background â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     canvas.drawRect(
       Rect.fromLTWH(0, 0, yAxisWidth - 2, size.height),
-      Paint()..color = Colors.white,
+      Paint()..color = scheme.surface,
     );
 
-    // â”€â”€ Grid + Y labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const gridN = 4;
     final gridP = Paint()
-      ..color = Colors.grey.withOpacity(0.12)
+      ..color = scheme.outlineVariant.withValues(alpha: .4)
       ..strokeWidth = 1;
     final yStyle = TextStyle(
+      fontFamily: fontFamily,
       fontSize: 9,
-      color: Colors.grey.shade600,
+      color: scheme.onSurfaceVariant,
       fontWeight: FontWeight.w500,
     );
 
@@ -726,9 +658,8 @@ class _BarChartPainter extends CustomPainter {
       tp.paint(canvas, Offset(yAxisWidth - tp.width - 5, y - tp.height / 2));
     }
 
-    // â”€â”€ Axis lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final axisP = Paint()
-      ..color = Colors.grey.withOpacity(0.2)
+      ..color = scheme.outlineVariant.withValues(alpha: .5)
       ..strokeWidth = 1;
     canvas.drawLine(
       Offset(yAxisWidth, _padTop),
@@ -741,7 +672,6 @@ class _BarChartPainter extends CustomPainter {
       axisP,
     );
 
-    // â”€â”€ Clip chart body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(yAxisWidth, 0, chartW, size.height));
 
@@ -765,35 +695,26 @@ class _BarChartPainter extends CustomPainter {
       final expX = x + halfBar + 1;
       final pairW = halfBar - 1;
 
-      // â”€â”€ Income bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (incH > 0) {
         final rr = RRect.fromRectAndCorners(
           Rect.fromLTWH(incX, baseY - incH, pairW, incH),
           topLeft: const Radius.circular(4),
           topRight: const Radius.circular(4),
         );
-        canvas.drawRRect(
-          rr,
-          Paint()
-            ..color = isSelected ? incomeGreen : incomeGreen.withOpacity(0.75),
-        );
+        _drawDepthBar(canvas, rr, incomeGreen, isSelected);
       }
 
-      // â”€â”€ Expense bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (expH > 0) {
         final rr = RRect.fromRectAndCorners(
           Rect.fromLTWH(expX, baseY - expH, pairW, expH),
           topLeft: const Radius.circular(4),
           topRight: const Radius.circular(4),
         );
-        canvas.drawRRect(
+        _drawDepthBar(
+          canvas,
           rr,
-          Paint()
-            ..color = isPeak
-                ? Colors.orange
-                : isSelected
-                ? expenseRed
-                : expenseRed.withOpacity(0.75),
+          isPeak ? Colors.orange : expenseRed,
+          isSelected,
         );
         // Peak diamond marker above bar
         if (isPeak && expH > 0) {
@@ -809,28 +730,27 @@ class _BarChartPainter extends CustomPainter {
         }
       }
 
-      // â”€â”€ Selected bar: highlight + tooltip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (isSelected) {
         // Highlight column background
         canvas.drawRect(
           Rect.fromLTWH(x - 2, _padTop, barW + 4, chartH),
-          Paint()..color = Colors.blueGrey.withOpacity(0.06),
+          Paint()..color = scheme.primary.withValues(alpha: .06),
         );
 
-        // Tooltip â€” replace newline with space for single-line display
         final label =
-            '${bar.label.replaceAll('\n', ' ')}  In:${currencySymbol}${_compact(bar.income)}  Out:${currencySymbol}${_compact(bar.expense)}';
+            '${bar.label.replaceAll('\n', ' ')}  In:$currencySymbol${_compact(bar.income)}  Out:$currencySymbol${_compact(bar.expense)}';
         final tp = TextPainter(
           text: TextSpan(
             text: label,
-            style: const TextStyle(
+            style: TextStyle(
+              fontFamily: fontFamily,
               fontSize: 9.5,
               color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
           ),
           textDirection: TextDirection.ltr,
-        )..layout(maxWidth: chartW);
+        )..layout(maxWidth: math.max(1.0, chartW - 18));
         final bW = tp.width + 18;
         final bH = tp.height + 10;
         final cx = x + barW / 2;
@@ -847,7 +767,6 @@ class _BarChartPainter extends CustomPainter {
         tp.paint(canvas, Offset(bx + 9, by + 5));
       }
 
-      // â”€â”€ X label: two lines split on '\n' (skip if too crowded) â”€â”€â”€â”€â”€â”€â”€â”€
       if (slotW >= 14) {
         final parts = bar.label.split(
           '\n',
@@ -858,13 +777,15 @@ class _BarChartPainter extends CustomPainter {
             ? 8.5
             : 7.5;
         final topStyle = TextStyle(
+          fontFamily: fontFamily,
           fontSize: fontSize,
           fontWeight: FontWeight.w700,
-          color: isSelected ? primaryRed : Colors.black87,
+          color: isSelected ? primaryBlue : scheme.onSurface,
         );
         final botStyle = TextStyle(
+          fontFamily: fontFamily,
           fontSize: fontSize - 0.5,
-          color: isSelected ? primaryRed : Colors.grey.shade500,
+          color: isSelected ? primaryBlue : scheme.onSurfaceVariant,
         );
 
         final topTp = TextPainter(
@@ -892,6 +813,33 @@ class _BarChartPainter extends CustomPainter {
     canvas.restore();
   }
 
+  void _drawDepthBar(Canvas canvas, RRect shape, Color color, bool selected) {
+    final rect = shape.outerRect;
+    canvas.drawRRect(
+      shape,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            Color.lerp(color, Colors.white, selected ? .2 : .4)!,
+            color,
+            Color.lerp(color, Colors.black, .18)!,
+          ],
+          stops: const [0, .55, 1],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ).createShader(rect),
+    );
+    if (rect.width > 4 && rect.height > 5) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(rect.left + 1, rect.top + 1, rect.width - 2, 2),
+          const Radius.circular(2),
+        ),
+        Paint()..color = Colors.white.withValues(alpha: .45),
+      );
+    }
+  }
+
   double _niceMax(double v) {
     if (v <= 0) return 1;
     final mag = math.pow(10, (math.log(v) / math.ln10).floor()).toDouble();
@@ -915,6 +863,9 @@ class _BarChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BarChartPainter old) =>
+      old.scheme != scheme ||
+      old.fontFamily != fontFamily ||
+      old.currencySymbol != currencySymbol ||
       old.progress != progress ||
       old.selectedBar != selectedBar ||
       old.scaleX != scaleX ||
@@ -922,175 +873,55 @@ class _BarChartPainter extends CustomPainter {
       old.bars != bars;
 }
 
-// â”€â”€ View-mode dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 class _ViewDropdown extends StatelessWidget {
+  const _ViewDropdown({required this.current, required this.onChanged});
   final _ViewMode current;
   final ValueChanged<_ViewMode> onChanged;
-  const _ViewDropdown({required this.current, required this.onChanged});
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _show(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: primaryRed.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: primaryRed.withOpacity(0.2)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(current.icon, size: 13, color: primaryRed),
-            const SizedBox(width: 5),
-            Text(
-              current.label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: primaryRed,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 3),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 14,
-              color: primaryRed,
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) => PopupMenuButton<_ViewMode>(
+    tooltip: 'Change chart view',
+    initialValue: current,
+    onSelected: onChanged,
+    itemBuilder: (_) => [
+      for (final mode in _ViewMode.values)
+        PopupMenuItem(value: mode, child: Text(mode.label)),
+    ],
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
       ),
-    );
-  }
-
-  void _show(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            current.icon,
+            size: 15,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            current.label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 18),
-            const Text(
-              'View Mode',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            ..._ViewMode.values.map((mode) {
-              final selected = mode == current;
-              return GestureDetector(
-                onTap: () {
-                  Navigator.pop(context);
-                  onChanged(mode);
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? primaryRed.withOpacity(0.08)
-                        : Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: selected ? primaryRed : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? primaryRed.withOpacity(0.12)
-                              : Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          mode.icon,
-                          size: 18,
-                          color: selected ? primaryRed : Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              mode.label,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: selected ? primaryRed : Colors.black87,
-                              ),
-                            ),
-                            Text(
-                              _modeSubtitle(mode),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (selected)
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          color: primaryRed,
-                          size: 20,
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
+          ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.expand_more_rounded,
+            size: 16,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ],
       ),
-    );
-  }
-
-  String _modeSubtitle(_ViewMode m) {
-    switch (m) {
-      case _ViewMode.day:
-        return 'Income & expense per day';
-      case _ViewMode.week:
-        return 'Grouped by week';
-      case _ViewMode.month:
-        return 'Last 6 months overview';
-    }
-  }
+    ),
+  );
 }
 
-// â”€â”€ Small reusable widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 class _TotalChip extends StatelessWidget {
-  final String label;
-  final double amount;
-  final String symbol;
-  final Color color;
-  final IconData icon;
   const _TotalChip({
     required this.label,
     required this.amount,
@@ -1098,42 +929,49 @@ class _TotalChip extends StatelessWidget {
     required this.color,
     required this.icon,
   });
-
+  final String label;
+  final double amount;
+  final String symbol;
+  final Color color;
+  final IconData icon;
   @override
   Widget build(BuildContext context) => Expanded(
     child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+          Row(
+            children: [
+              Icon(icon, color: color, size: 14),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 10,
-                    color: color,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 1),
-                Text(
-                  '$symbol ${formatCurrency(amount)}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '$symbol ${formatCurrency(amount)}',
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -.4,
+              ),
             ),
           ),
         ],
@@ -1143,30 +981,22 @@ class _TotalChip extends StatelessWidget {
 }
 
 class _NavBtn extends StatelessWidget {
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onTap;
   const _NavBtn({
     required this.icon,
     required this.enabled,
     required this.onTap,
   });
-
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: enabled ? onTap : null,
-    child: Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: enabled ? primaryRed.withOpacity(0.1) : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(
-        icon,
-        size: 18,
-        color: enabled ? primaryRed : Colors.grey.shade300,
-      ),
-    ),
+  Widget build(BuildContext context) => IconButton(
+    tooltip: icon == Icons.chevron_left_rounded
+        ? 'Previous month'
+        : 'Next month',
+    onPressed: enabled ? onTap : null,
+    icon: Icon(icon, size: 20),
+    color: Theme.of(context).colorScheme.primary,
   );
 }
 
@@ -1203,7 +1033,7 @@ class _LegendItem extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: 10,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w500,
         ),
       ),

@@ -11,8 +11,12 @@ class CurrencyPickerWidget extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isScrollControlled: false,
-      builder: (_) => const CurrencyPickerWidget(),
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      builder: (_) =>
+          const SingleChildScrollView(child: CurrencyPickerWidget()),
     );
   }
 
@@ -21,10 +25,11 @@ class CurrencyPickerWidget extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
       child: Column(
@@ -32,7 +37,8 @@ class CurrencyPickerWidget extends ConsumerWidget {
         children: [
           // Handle bar
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: Colors.grey[300],
               borderRadius: BorderRadius.circular(2),
@@ -50,19 +56,22 @@ class CurrencyPickerWidget extends ConsumerWidget {
               margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? primaryRed.withOpacity(0.08)
-                    : Colors.grey[50],
+                    ? primaryBlue.withValues(alpha: 0.08)
+                    : scheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? primaryRed : Colors.transparent,
+                  color: isSelected ? primaryBlue : Colors.transparent,
                   width: 2,
                 ),
               ),
               child: ListTile(
                 leading: Container(
-                  width: 44, height: 44,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
-                    color: isSelected ? primaryRed : Colors.grey[200],
+                    color: isSelected
+                        ? primaryBlue
+                        : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
@@ -73,7 +82,7 @@ class CurrencyPickerWidget extends ConsumerWidget {
                         fontWeight: FontWeight.bold,
                         color: isSelected
                             ? Colors.white
-                            : Colors.grey[700],
+                            : scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -81,15 +90,16 @@ class CurrencyPickerWidget extends ConsumerWidget {
                 title: Text(
                   entry.key.toString().split('.').last,
                   style: TextStyle(
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.w500,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                     fontSize: 16,
                   ),
                 ),
                 trailing: isSelected
-                    ? const Icon(Icons.check_circle,
-                        color: primaryRed, size: 22)
+                    ? const Icon(
+                        Icons.check_circle,
+                        color: primaryBlue,
+                        size: 22,
+                      )
                     : null,
                 onTap: () {
                   notifier.setCurrency(entry.key);

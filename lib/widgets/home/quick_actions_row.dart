@@ -1,113 +1,101 @@
-// lib/widgets/home/quick_actions_row.dart
 import 'package:flutter/material.dart';
-import '../../utils/constants.dart';
 import '../../widgets/currency_picker_widget.dart';
 import '../../screens/profile/subscription_screen.dart';
+import 'home_motion.dart';
 
 class QuickActionsRow extends StatelessWidget {
-  /// Called when Books action is tapped — switches to Books tab
-  final VoidCallback onBooksTap;
-
-  /// Called when Reports action is tapped
-  final VoidCallback onReportsTap;
-
   const QuickActionsRow({
     super.key,
     required this.onBooksTap,
     required this.onReportsTap,
   });
-
+  final VoidCallback onBooksTap;
+  final VoidCallback onReportsTap;
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _QuickActionItem(
-          icon:  Icons.book_outlined,
-          label: 'Books',
-          color: primaryRed,
-          onTap: onBooksTap,         // ✅ Switches to Books tab
-        ),
-        const SizedBox(width: 12),
-        _QuickActionItem(
-          icon:  Icons.bar_chart_outlined,
-          label: 'Reports',
-          color: const Color(0xFF185FA5),
-          onTap: onReportsTap,       // ✅ Caller handles this
-        ),
-        const SizedBox(width: 12),
-        _QuickActionItem(
-          icon:  Icons.attach_money,
-          label: 'Currency',
-          color: const Color(0xFF0F6E56),
-          onTap: () => CurrencyPickerWidget.show(context), // ✅ Opens currency picker
-        ),
-        const SizedBox(width: 12),
-        _QuickActionItem(
-          icon:  Icons.workspace_premium,
-          label: 'Premium',
-          color: const Color(0xFFBA7517),
-          onTap: () => Navigator.push(                    // ✅ Opens subscription screen
-            context,
-            MaterialPageRoute(
-                builder: (_) => const SubscriptionScreen()),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _QuickActionItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    final actions = [
+      (icon: Icons.auto_stories_rounded, label: 'Books', onTap: onBooksTap),
+      (
+        icon: Icons.insert_chart_outlined_rounded,
+        label: 'Reports',
+        onTap: onReportsTap,
       ),
+      (
+        icon: Icons.currency_exchange_rounded,
+        label: 'Currency',
+        onTap: () => CurrencyPickerWidget.show(context),
+      ),
+      (
+        icon: Icons.workspace_premium_rounded,
+        label: 'Premium',
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const SubscriptionScreen()),
+          );
+        },
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            constraints.maxWidth < 310 ||
+                MediaQuery.textScalerOf(context).scale(12) > 16
+            ? 2
+            : 4;
+        final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 12,
+          children: [
+            for (final action in actions)
+              SizedBox(
+                width: width,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: .45),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(alpha: .05),
+                        blurRadius: 15,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: DepthButton(
+                    onTap: action.onTap,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 17,
+                        horizontal: 4,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SculptedIcon(icon: action.icon, size: 40),
+                          const SizedBox(height: 12),
+                          Text(
+                            action.label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
